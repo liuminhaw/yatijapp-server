@@ -14,17 +14,16 @@ import (
 )
 
 type Target struct {
-	UUID      uuid.UUID `json:"uuid"`
-	CreatedAt time.Time `json:"created_at"`
-	DueAt     time.Time `json:"due_at,omitzero"`
-	UpdatedAt time.Time `json:"updated_at"`
-	// CompletedAt time.Time `json:"completed_at,omitzero"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitzero"`
-	Notes       string `json:"notes,omitzero"`
-	Version     int32  `json:"version"`
-	Status      Status `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
-	SerialID    int64  `json:"-"`               // Optional field for serial ID, not used in all contexts
+	UUID        uuid.UUID    `json:"uuid"`
+	CreatedAt   time.Time    `json:"created_at"`
+	DueDate     sql.NullTime `json:"due_date,omitzero"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitzero"`
+	Notes       string       `json:"notes,omitzero"`
+	Version     int32        `json:"version"`
+	Status      Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
+	SerialID    int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
 }
 
 func ValidateTarget(v *validator.Validator, target *Target) {
@@ -36,9 +35,16 @@ func ValidateTarget(v *validator.Validator, target *Target) {
 		"status",
 		"must be one of 'queued', 'in progress', 'complete', or 'canceled'",
 	)
-	v.Check(target.DueAt.After(time.Now()), "due_at", "must be in the future")
+	if target.DueDate.Valid {
+		v.Check(
+			target.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
+			"due_date",
+			"must be in the future",
+		)
+	}
 }
 
+// Full Text Search (FTS) struct type for Target
 type TargetFTS struct {
 	// UUID             uuid.UUID
 	TitleToken       *tokenizer.Tokenizer
@@ -68,28 +74,39 @@ type TargetModel struct {
 	Jieba *gojieba.Jieba
 }
 
-func (t TargetModel) Insert(target *Target, fts TargetFTS) error {
+func (t TargetModel) Insert(target *Target, fts TargetFTS, userUUID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	tx, err := t.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	args := []any{target.Title, target.Description, target.Notes, target.DueAt, target.Status}
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO targets (title, description, notes, due_at, status)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING uuid, created_at, updated_at, version`, args...,
-	).Scan(&target.UUID, &target.CreatedAt, &target.UpdatedAt, &target.Version)
-	if err != nil {
-		return err
-	}
-
-	args = []any{
-		target.UUID,
+	query := `
+		WITH new_target AS (
+			INSERT INTO targets (title, description, notes, due_date, status)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING uuid, created_at, updated_at, version
+		), grant_acl AS (
+			INSERT INTO acls (user_uuid, resource_type, resource_uuid, role_code)
+			SELECT $6, 'target', uuid, 'owner' FROM new_target
+		), new_fts AS (
+			INSERT INTO targets_fts (target_uuid, fts_chinese_tsv, fts_english_tsv)
+			SELECT
+				uuid,
+				setweight(to_tsvector('simple', $7), 'A') ||
+				setweight(to_tsvector('simple', $8), 'B') ||
+				setweight(to_tsvector('simple', $9), 'C'),
+				setweight(to_tsvector('english', $10), 'A') ||
+				setweight(to_tsvector('english', $11), 'B') ||
+				setweight(to_tsvector('english', $12), 'C')
+			FROM new_target
+		)
+		SELECT uuid, created_at, updated_at, version FROM new_target;
+	`
+	args := []any{
+		target.Title,
+		target.Description,
+		target.Notes,
+		target.DueDate,
+		target.Status,
+		userUUID,
 		fts.TitleToken.Chinese,
 		fts.DescriptionToken.Chinese,
 		fts.NotesToken.Chinese,
@@ -97,49 +114,14 @@ func (t TargetModel) Insert(target *Target, fts TargetFTS) error {
 		fts.DescriptionToken.English,
 		fts.NotesToken.English,
 	}
-	// _, err = tx.ExecContext(ctx, `
-	// 	INSERT INTO targets_fts (
-	// 			target_uuid,
-	// 			title_chinese_tsv,
-	// 			title_english_tsv,
-	// 			description_chinese_tsv,
-	// 			description_english_tsv
-	// 	) VALUES (
-	// 		$1, to_tsvector('simple', $2), to_tsvector('english', $3),
-	// 		to_tsvector('simple', $4), to_tsvector('english', $5)
-	// )`, args...)
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO targets_fts (target_uuid, fts_chinese_tsv, fts_english_tsv)
-		VALUES (
-			$1,
-			setweight(to_tsvector('simple', $2), 'A') ||
-			setweight(to_tsvector('simple', $3), 'B') ||
-			setweight(to_tsvector('simple', $4), 'C'),
-			setweight(to_tsvector('english', $5), 'A') ||
-			setweight(to_tsvector('english', $6), 'B') ||
-			setweight(to_tsvector('english', $7), 'C')
-		)`, args...)
+
+	err := t.DB.QueryRowContext(ctx, query, args...).
+		Scan(&target.UUID, &target.CreatedAt, &target.UpdatedAt, &target.Version)
 	if err != nil {
 		return err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
 	return nil
-	// query := `
-	//        INSERT INTO targets (title, description, notes, due_at, status)
-	// 	VALUES ($1, $2, $3, $4, $5)
-	// 	RETURNING uuid, created_at, updated_at, version`
-	//
-	// args := []any{target.Title, target.Description, target.Notes, target.DueAt, target.Status}
-	//
-	// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	// defer cancel()
-	//
-	// return t.DB.QueryRowContext(ctx, query, args...).
-	// 	Scan(&target.UUID, &target.CreatedAt, &target.UpdatedAt, &target.Version)
 }
 
 func (t TargetModel) Get(uuid uuid.UUID) (*Target, error) {
@@ -147,7 +129,7 @@ func (t TargetModel) Get(uuid uuid.UUID) (*Target, error) {
 		SELECT 
 			uuid, 
 			created_at, 
-			due_at, 
+			due_date, 
 			updated_at, 
 			title, 
 			description, 
@@ -165,7 +147,7 @@ func (t TargetModel) Get(uuid uuid.UUID) (*Target, error) {
 	err := t.DB.QueryRowContext(ctx, query, uuid).Scan(
 		&target.UUID,
 		&target.CreatedAt,
-		&target.DueAt,
+		&target.DueDate,
 		&target.UpdatedAt,
 		&target.Title,
 		&target.Description,
@@ -189,7 +171,7 @@ func (t TargetModel) Update(target *Target) error {
 	query := `
 		UPDATE targets
 		SET title = $1, description = $2, notes = $3, 
-			due_at = $4, status = $5, version = version + 1, updated_at = NOW()
+			due_date = $4, status = $5, version = version + 1, updated_at = NOW()
 		WHERE uuid = $6 AND version = $7
 		RETURNING created_at, updated_at, version`
 
@@ -197,7 +179,7 @@ func (t TargetModel) Update(target *Target) error {
 		target.Title,
 		target.Description,
 		target.Notes,
-		target.DueAt,
+		target.DueDate,
 		target.Status,
 		target.UUID,
 		target.Version,
@@ -249,39 +231,17 @@ func (t TargetModel) GetAll(
 	token tokenizer.Tokenizer,
 	filters Filters,
 ) ([]*Target, Metadata, error) {
-	// query := `
-	// 	SELECT
-	// 		uuid,
-	// 		created_at,
-	// 		due_at,
-	// 		updated_at,
-	// 		title,
-	// 		description,
-	// 		notes,
-	// 		status,
-	// 		version,
-	// 		serial_id
-	// 	FROM targets
-	// 	WHERE (to_tsvector('simple',title) @@ plainto_tsquery('simple',$1) OR $1 = '')
-	// 		AND (
-	// 			CASE
-	// 				WHEN $2 = '' THEN TRUE
-	// 				ELSE status = $2::statuses
-	// 			END
-	// 		)
-	// 	ORDER BY serial_id`
 	query := fmt.Sprintf(`
-		SELECT 
+		SELECT
 			count(*) OVER(),
-			t.uuid, 
-			t.created_at, 
-			t.due_at, 
-			t.updated_at, 
-			t.title, 
-			t.description, 
-			t.notes, 
-			t.status, 
-			t.version, 
+			t.uuid,
+			t.created_at,
+			t.due_date,
+			t.updated_at,
+			t.title,
+			t.description,
+			t.status,
+			t.version,
 			t.serial_id,
 			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
 				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
@@ -296,7 +256,7 @@ func (t TargetModel) GetAll(
 				END
 			)
 		ORDER BY %s %s, rank DESC, serial_id DESC
-		LIMIT $4 OFFSET $5`, filters.sortColumn(), filters.sortDirection())
+		limit $4 offset $5`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -319,11 +279,100 @@ func (t TargetModel) GetAll(
 			&totalRecords,
 			&target.UUID,
 			&target.CreatedAt,
-			&target.DueAt,
+			&target.DueDate,
 			&target.UpdatedAt,
 			&target.Title,
 			&target.Description,
-			&target.Notes,
+			// &target.Notes,
+			&target.Status,
+			&target.Version,
+			&target.SerialID,
+			&ignored,
+		)
+		if err != nil {
+			return nil, Metadata{}, err
+		}
+
+		targets = append(targets, &target)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, Metadata{}, err
+	}
+
+	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
+
+	return targets, metadata, nil
+}
+
+func (t TargetModel) GetAllForUser(
+	token tokenizer.Tokenizer,
+	filters Filters,
+	userUUID uuid.UUID,
+	// user User,
+) ([]*Target, Metadata, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			count(*) OVER(),
+			t.uuid,
+			t.created_at,
+			t.due_date,
+			t.updated_at,
+			t.title,
+			t.description,
+			t.status,
+			t.version,
+			t.serial_id,
+			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
+				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
+		FROM targets_fts fts
+		JOIN targets t ON fts.target_uuid = t.uuid
+		JOIN acls_targets a ON a.resource_uuid = t.uuid
+		WHERE (fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1) OR $1 = '')
+			AND (fts.fts_english_tsv @@ plainto_tsquery('english', $2) OR $2 = '')
+			AND (
+				CASE
+					WHEN $3 = '' THEN TRUE
+					ELSE status = $3::statuses
+				END
+			)
+			AND a.user_uuid = $4
+		ORDER BY %s %s, rank DESC, serial_id DESC
+		LIMIT $5 OFFSET $6`, filters.sortColumn(), filters.sortDirection())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	args := []any{
+		token.Chinese,
+		token.English,
+		filters.Status,
+		userUUID,
+		filters.limit(),
+		filters.offset(),
+	}
+
+	rows, err := t.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, Metadata{}, err
+	}
+	defer rows.Close()
+
+	totalRecords := 0
+	targets := []*Target{}
+	for rows.Next() {
+		var target Target
+		var ignored float64
+
+		err := rows.Scan(
+			&totalRecords,
+			&target.UUID,
+			&target.CreatedAt,
+			&target.DueDate,
+			&target.UpdatedAt,
+			&target.Title,
+			&target.Description,
+			// &target.Notes,
 			&target.Status,
 			&target.Version,
 			&target.SerialID,

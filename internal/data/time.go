@@ -1,35 +1,46 @@
 package data
 
 import (
+	"database/sql"
 	"errors"
 	"strconv"
 	"time"
 )
 
-var ErrInvalidTimeFormat = errors.New("invalid time format")
+var ErrInvalidTimeFormat = errors.New("invalid date format, expected YYYY-mm-dd")
 
 var acceptedFormats = []string{
-	time.RFC3339,
-	time.RFC822Z,
-	"02 Jan 2006 15:04 -0700",
-	"2006-01-02 15:04:05 -0700",
-	"2006/01/02 15:04:05 -0700",
+	"2006-01-02",
 }
 
-type InputTime time.Time
+// type InputDate time.Time
+type InputDate sql.NullTime
 
 // Implement a UnmarshalJSON method on the InputTime type so that it satisfies
 // the json.Unmarshaler interface.
-func (it *InputTime) UnmarshalJSON(jsonValue []byte) error {
+func (it *InputDate) UnmarshalJSON(jsonValue []byte) error {
+	if string(jsonValue) == "null" {
+		*it = InputDate(sql.NullTime{Valid: false})
+		return nil
+	}
+
 	unquotedJSONValue, err := strconv.Unquote(string(jsonValue))
 	if err != nil {
 		return ErrInvalidTimeFormat
 	}
 
+	if unquotedJSONValue == "" {
+		*it = InputDate(sql.NullTime{Valid: false})
+		return nil
+	}
+
 	for _, format := range acceptedFormats {
 		parsedTime, err := time.Parse(format, unquotedJSONValue)
 		if err == nil {
-			*it = (InputTime)(parsedTime)
+			*it = InputDate(sql.NullTime{
+				Time:  parsedTime,
+				Valid: true,
+			})
 			return nil
 		}
 	}
@@ -37,16 +48,25 @@ func (it *InputTime) UnmarshalJSON(jsonValue []byte) error {
 	return ErrInvalidTimeFormat
 }
 
-func (it InputTime) MarshalJSON() ([]byte, error) {
-	// Format the time as RFC3339
-	formattedTime := time.Time(it).Format(time.RFC3339)
+func (it InputDate) MarshalJSON() ([]byte, error) {
+	nullTime := sql.NullTime(it)
+	if !nullTime.Valid {
+		return []byte(""), nil
+	}
+
+	formattedTime := nullTime.Time.Format("2006-01-02")
 	return []byte(strconv.Quote(formattedTime)), nil
 }
 
-func (it InputTime) Time() time.Time {
-	return time.Time(it)
+func (it InputDate) GetTime() time.Time {
+	return sql.NullTime(it).Time
 }
 
-func (it InputTime) String() string {
-	return it.Time().String()
+func (it InputDate) String() string {
+	nullTime := sql.NullTime(it)
+	if !nullTime.Valid {
+		return ""
+	}
+
+	return nullTime.Time.Format("2006-01-02")
 }

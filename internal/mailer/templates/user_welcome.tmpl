@@ -1,0 +1,77 @@
+{{define "subject"}}Welcome to Yatijapp!{{end}}
+
+{{define "plainBody"}}
+Welcome to Yatijapp!
+
+Hi {{.username}},
+
+Thanks for signing up for Yatijapp! We're excited to have you on board!
+    
+Yatijapp is designed to help you manage tasks and time on your targets.
+
+We hope you find it useful and enjoyable.
+
+To get started, please activate your account by submitting the following token to the Yatijapp tui:
+
+token: {{.activationToken}}
+
+Please note that this is a one-time use token and it will expire in 3 days.
+
+If you have any questions or need assistance, feel free to reach out to us.
+
+Best regards,
+The Yatijapp Team
+{{end}}
+
+{{define "htmlBody"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html" charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Yatijapp</title>
+  <style>
+    body {
+        font-family: Courier New, monospace;
+        line-height: 1.6;
+        color: #cdd6f4;
+        background-color: #1e1e2e;
+    }
+    .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    h1 {
+        color: #ffff87;
+        /*background-color: #5f5fff;*/
+        /*padding: 5px;*/
+        text-align: center;
+        /*border-radius: 5px;*/
+    }
+    code, pre {
+        background-color: #313244;
+        color: #94e2d5;
+        padding: 0.2em 0.4em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Welcome to Yatijapp!</h1>
+    <p>Hi {{.username}},</p>
+    <p>Thanks for signing up for Yatijapp! We're excited to have you on board.</p>
+    <p>Yatijapp is designed to help you manage tasks and time on your targets.</p>
+    <p>We hope you find it useful and enjoyable.</p>
+    <p>To get started, please activate your account by submitting the following token to the Yatijapp tui:</p>
+    <pre><code>
+    token: {{.activationToken}}
+    </code></pre>
+    <p>Please note that this is a one-time use token and it will expire in 3 days.</p>
+    <p>If you have any questions or need assistance, feel free to reach out to us.</p>
+    <p>Best regards,<br>The Yatijapp Team</p>
+  </div>
+</body>
+
+</html>
+{{end}}

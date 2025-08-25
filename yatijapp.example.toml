@@ -1,0 +1,24 @@
+[server]
+# port = 8080
+# env = "development"
+
+[server.limiter]
+# enabled = true
+# rps = 2.0
+# burst = 4
+
+[database]
+# dsn = "postgres://username:password@host:port/db?sslmode=disable"
+# max_open_conns = 25
+# max_idle_conns = 25
+# max_idle_time = 15m
+
+[mailer]
+# sender = "Yatijapp <no-reply@yatijapp.fakemail.com>"
+
+[mailer.smtp]
+# host = "sandbox.smtp.mailtrap.io"
+# port = 25
+# username = ""
+# password = ""
+

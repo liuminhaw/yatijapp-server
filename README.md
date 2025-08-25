@@ -43,18 +43,40 @@ migrate -path=./migrations -database=<DSN> down
 
 ### APIs
 #### Create new target
-Body
+**Request**
+```bash
+BODY='<json>'
+curl -i -X POST -d "$BODY" http://localhost:8080/v1/targets
+```
+
+**Body**
 ```json
 {
-  "due_at": "03 Aug 2025 15:30 +0800",
+  "due_date": "03 Aug 2025 15:30 +0800",
   "title": "Example title",
   "description": "Example description",
   "notes": "Example notes",
   "status": "in progress"
 }
 ```
-Request
+**Required fields**
+    - title
+    - status
+
+#### Update target
+**Request**
 ```bash
 BODY='<json>'
 curl -i -X POST -d "$BODY" http://localhost:8080/v1/targets
 ```
+**Body**
+```json
+{
+  "due_date": "03 Aug 2025 15:30 +0800",
+  "title": "Example title",
+  "description": "Example description",
+  "notes": "Example notes",
+  "status": "in progress"
+}
+```
+

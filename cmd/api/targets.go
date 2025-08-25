@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 
 func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		DueAt       data.InputTime `json:"due_at"`
+		DueDate     data.InputDate `json:"due_date"`
 		Title       string         `json:"title"`
 		Description string         `json:"description"`
 		Notes       string         `json:"notes"`
@@ -26,7 +27,7 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	target := data.Target{
-		DueAt:       input.DueAt.Time(),
+		DueDate:     sql.NullTime(input.DueDate),
 		Title:       input.Title,
 		Description: input.Description,
 		Notes:       input.Notes,
@@ -47,7 +48,8 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 		app.models.Targets.Jieba,
 	)
 
-	err = app.models.Targets.Insert(&target, fts)
+	user := app.contextGetUser(r)
+	err = app.models.Targets.Insert(&target, fts, user.UUID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -108,7 +110,7 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 		Title       *string         `json:"title"`
 		Description *string         `json:"description"`
 		Notes       *string         `json:"notes"`
-		DueAt       *data.InputTime `json:"due_at"`
+		DueDate     *data.InputDate `json:"due_date"`
 		Status      *data.Status    `json:"status"`
 	}
 	err = app.readJSON(w, r, &input)
@@ -126,8 +128,8 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 	if input.Notes != nil {
 		target.Notes = *input.Notes
 	}
-	if input.DueAt != nil {
-		target.DueAt = input.DueAt.Time()
+	if input.DueDate != nil {
+		target.DueDate = sql.NullTime(*input.DueDate)
 	}
 	if input.Status != nil {
 		target.Status = *input.Status
@@ -183,7 +185,6 @@ func (app *application) deleteTargetHandler(w http.ResponseWriter, r *http.Reque
 func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Search string
-		// DueAt    time.Time
 		data.Filters
 	}
 
@@ -201,12 +202,12 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 		"serial_id",
 		"title",
 		"created_at",
-		"due_at",
+		"due_date",
 		"updated_at",
 		"-serial_id",
 		"-title",
 		"-created_at",
-		"-due_at",
+		"-due_date",
 		"-updated_at",
 	}
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
@@ -218,7 +219,8 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 
 	t := tokenizer.New(input.Search, app.models.Targets.Jieba)
 
-	targets, metadata, err := app.models.Targets.GetAll(*t, input.Filters)
+	user := app.contextGetUser(r)
+	targets, metadata, err := app.models.Targets.GetAllForUser(*t, input.Filters, user.UUID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

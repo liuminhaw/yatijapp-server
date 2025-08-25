@@ -121,8 +121,8 @@ func (app *application) readString(qs url.Values, key string, defaultValue strin
 	return s
 }
 
-// readInt() helper reads a string value from the query string and converts it to 
-// an integer before returning. Returns the provided default value if no matching 
+// readInt() helper reads a string value from the query string and converts it to
+// an integer before returning. Returns the provided default value if no matching
 // key is found. If the conversion fails, we record an error message to the provided
 // validator.Validator instance.
 func (app *application) readInt(
@@ -155,3 +155,26 @@ func (app *application) readInt(
 //
 // 	return strings.Split(csv, ",")
 // }
+
+// background() runs the provided function in a separate goroutine, allowing it to
+// execute concurrently with the main application. It also recovers from any panic
+// that occurs during the execution of the function, logging the error using the
+// application's logger.
+func (app *application) background(fn func()) {
+	app.wg.Add(1)
+
+	go func() {
+		defer app.wg.Done()
+
+		// Recover any panic
+		defer func() {
+			pv := recover()
+			if pv != nil {
+				app.logger.Error(fmt.Sprintf("%v", pv))
+			}
+		}()
+
+		// Execute the provided function
+		fn()
+	}()
+}
