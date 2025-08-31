@@ -127,7 +127,7 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 		return
 	}
 
-	match, err := user.Password.Matches(input.Password)
+	match, err := user.Password.Matches(input.Password, app.config.pepper)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

@@ -44,7 +44,6 @@ type password struct {
 	// Using a pointer to string to distinguish between a plaintext password not
 	// presented (nil) and an empty string.
 	plaintext *string
-	pepper    string
 	hash      []byte
 }
 
@@ -70,11 +69,11 @@ func (p *password) Set(plaintextPassword, pepper string) error {
 }
 
 // Matches() method checks if the provided plaintext password matches the stored hash.
-func (p *password) Matches(plaintextPassword string) (bool, error) {
+func (p *password) Matches(plaintextPassword, pepper string) (bool, error) {
 	pw := norm.NFKC.String(plaintextPassword)
 
 	// Hash password to fixed length with pepper before actual bcrypt comparison.
-	mac := hmac.New(sha512.New, []byte(p.pepper))
+	mac := hmac.New(sha512.New, []byte(pepper))
 	mac.Write([]byte(pw))
 	preHash := mac.Sum(nil)
 
