@@ -93,7 +93,6 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 
 		authorizationHeader := r.Header.Get("Authorization")
 		if authorizationHeader == "" {
-			app.logger.Info("no auth header")
 			r = app.contextSetUser(r, data.AnonymousUser)
 			next.ServeHTTP(w, r)
 			return

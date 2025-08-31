@@ -3,6 +3,7 @@ package validator
 import (
 	"regexp"
 	"slices"
+	"unicode"
 )
 
 // regular expression for sanity checking the format of an email address
@@ -58,4 +59,17 @@ func Unique[T comparable](values []T) bool {
 	}
 
 	return len(uniqueValues) == len(values)
+}
+
+// ValidUnicodeChars check if there are Control(Cc), Format(Cf), Bidi controls,
+// and zero-width cahracters in the string.
+// The input string should be normalized before calling this function.
+func ValidUnicodeChars(value string) bool {
+	for _, r := range value {
+		if unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Cf, r) {
+			return false
+		}
+	}
+
+	return true
 }

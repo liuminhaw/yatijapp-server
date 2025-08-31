@@ -2,14 +2,18 @@ package data
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/sha512"
 	"database/sql"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/validator"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -22,7 +26,6 @@ var ErrDuplicateEmail = errors.New("duplicate email")
 var AnonymousUser = &User{}
 
 type User struct {
-	// ID        int64     `json:"id"`
 	UUID      uuid.UUID `json:"uuid"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -41,13 +44,21 @@ type password struct {
 	// Using a pointer to string to distinguish between a plaintext password not
 	// presented (nil) and an empty string.
 	plaintext *string
+	pepper    string
 	hash      []byte
 }
 
 // Set() method calculate the bcrypt hash of the plaintext password and stores
 // both the plaintext and the hash in the password struct.
-func (p *password) Set(plaintextPassword string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(plaintextPassword), bcryptCost)
+func (p *password) Set(plaintextPassword, pepper string) error {
+	pw := norm.NFKC.String(plaintextPassword)
+
+	// Hash password to fixed length with pepper before actual bcrypt hashing.
+	mac := hmac.New(sha512.New, []byte(pepper))
+	mac.Write([]byte(pw))
+	preHash := mac.Sum(nil)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(preHash), bcryptCost)
 	if err != nil {
 		return err
 	}
@@ -60,7 +71,14 @@ func (p *password) Set(plaintextPassword string) error {
 
 // Matches() method checks if the provided plaintext password matches the stored hash.
 func (p *password) Matches(plaintextPassword string) (bool, error) {
-	err := bcrypt.CompareHashAndPassword(p.hash, []byte(plaintextPassword))
+	pw := norm.NFKC.String(plaintextPassword)
+
+	// Hash password to fixed length with pepper before actual bcrypt comparison.
+	mac := hmac.New(sha512.New, []byte(p.pepper))
+	mac.Write([]byte(pw))
+	preHash := mac.Sum(nil)
+
+	err := bcrypt.CompareHashAndPassword(p.hash, []byte(preHash))
 	if err != nil {
 		switch {
 		case errors.Is(err, bcrypt.ErrMismatchedHashAndPassword):
@@ -79,15 +97,26 @@ func ValidateEmail(v *validator.Validator, email string) {
 }
 
 func ValidatePasswordPlaintext(v *validator.Validator, password string) {
-	v.Check(password != "", "password", "must be provided")
-	v.Check(len(password) >= 8, "password", "must be at least 8 bytes long")
+	pw := norm.NFKC.String(password)
+
+	v.Check(pw != "", "password", "must be provided")
+	v.Check(
+		validator.ValidUnicodeChars(pw),
+		"password",
+		"must no contain unicode Control or Format characters",
+	)
+	v.Check(utf8.RuneCountInString(password) >= 8, "password", "must be at least 8 bytes long")
 	// Consider: pre-hash the password to not enforce the length limit
-	v.Check(len(password) <= 72, "password", "must not be more than 72 bytes long")
+	v.Check(
+		utf8.RuneCountInString(password) <= 72,
+		"password",
+		"must not be more than 72 bytes long",
+	)
 }
 
 func ValidateUser(v *validator.Validator, user *User) {
 	v.Check(user.Name != "", "name", "must be provided")
-	v.Check(len(user.Name) <= 40, "name", "must not be more than 40 bytes long")
+	v.Check(utf8.RuneCountInString(user.Name) <= 30, "name", "must not be more than 40 bytes long")
 
 	ValidateEmail(v, user.Email)
 	if user.Password.plaintext != nil {

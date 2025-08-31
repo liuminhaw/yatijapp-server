@@ -1,6 +1,7 @@
 [server]
 # port = 8080
 # env = "development"
+# pepper = "random string for password hashing"
 
 [server.limiter]
 # enabled = true

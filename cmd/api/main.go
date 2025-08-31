@@ -19,9 +19,10 @@ import (
 const version = "1.0.0"
 
 type config struct {
-	port int
-	env  string
-	db   struct {
+	port   int
+	env    string
+	pepper string
+	db     struct {
 		dsn          string
 		maxOpenConns int
 		maxIdleConns int
@@ -165,6 +166,7 @@ func openDB(cfg config) (*sql.DB, error) {
 func configSetup(conf *viper.Viper) (config, error) {
 	conf.SetDefault("server.port", 8080)
 	conf.SetDefault("server.env", "development")
+	conf.SetDefault("server.pepper", "")
 	conf.SetDefault("server.limiter.rps", 2.0)
 	conf.SetDefault("server.limiter.burst", 4)
 	conf.SetDefault("server.limiter.enabled", true)
@@ -200,8 +202,9 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.BindPFlag("mailer.smtp.password", flag.Lookup("smtp-password"))
 
 	return config{
-		port: conf.GetInt("server.port"),
-		env:  conf.GetString("server.env"),
+		port:   conf.GetInt("server.port"),
+		env:    conf.GetString("server.env"),
+		pepper: conf.GetString("server.pepper"),
 		db: struct {
 			dsn          string
 			maxOpenConns int

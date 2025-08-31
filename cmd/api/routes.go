@@ -51,6 +51,7 @@ func (app *application) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
 	// Activate a user account
 	router.HandlerFunc(http.MethodPut, "/v1/users/activated", app.activateUserHandler)
+	router.HandlerFunc(http.MethodPut, "/v1/users/password", app.updateUserPasswordHandler)
 
 	// Tokens routes
 	// Generate a new activation token for a user
@@ -63,6 +64,11 @@ func (app *application) routes() http.Handler {
 	)
 	// Generate a new pair of authentication tokens for a user by using a valid refresh token
 	router.HandlerFunc(http.MethodPost, "/v1/tokens/refresh", app.refreshAuthenticationTokenHandler)
+	router.HandlerFunc(
+		http.MethodPost,
+		"/v1/tokens/password-reset",
+		app.createPasswordResetTokenHandler,
+	)
 
 	return app.recoverPanic(app.rateLimit(app.authenticate(router)))
 }

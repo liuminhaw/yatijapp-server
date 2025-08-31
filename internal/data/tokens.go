@@ -15,6 +15,7 @@ const (
 	ScopeActivation     = "activation"
 	ScopeAuthentication = "authentication"
 	ScopeRefresh        = "refresh"
+	ScopePasswordReset  = "password-reset"
 )
 
 // Token struct holds the information for an individual token.
@@ -97,4 +98,3 @@ func (m TokenModel) DeleteAllForUser(scope string, userUUID uuid.UUID) error {
 	_, err := m.DB.ExecContext(ctx, query, scope, userUUID)
 	return err
 }
-
