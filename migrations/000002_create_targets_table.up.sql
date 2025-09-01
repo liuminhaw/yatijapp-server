@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS "targets" (
-    "uuid" uuid PRIMARY KEY DEFAULT uuid_generate_v1 (),
+    "uuid" uuid PRIMARY KEY DEFAULT uuidv7 (),
     "serial_id" bigserial NOT NULL UNIQUE,
     "title" text NOT NULL,
     "description" text NOT NULL,

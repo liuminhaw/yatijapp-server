@@ -13,8 +13,18 @@
 - Pattern: `DELETE /v1/targets/{UUIDv1}` -> Handler: `...` -> Action: `Delete a specific target`
 
 ## DB
-- Using PostgreSQL as the database.
+- Using PostgreSQL 18 as the database (version 18 is required for using uuidv7).
     - DSN format: `postgres://username:password@host:port/database?sslmode=disable` 
+
+### Initialization
+```sql
+CREATE DATABASE <database_name>;
+CREATE ROLE <role_name> WITH LOGIN PASSWORD 'password';
+ALTER DATABASE <database_name> OWNER TO <role_name>;
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+```
 
 ### Migrations
 Using [`migrate` tool](https://github.com/golang-migrate/migrate) for database migrations.

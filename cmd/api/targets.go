@@ -161,7 +161,7 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 func (app *application) deleteTargetHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readUUIDParam(r)
 	if err != nil {
-		app.notFoundResponse(w, r)
+		app.badRequestResponse(w, r, err)
 		return
 	}
 

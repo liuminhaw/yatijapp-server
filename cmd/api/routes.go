@@ -70,5 +70,12 @@ func (app *application) routes() http.Handler {
 		app.createPasswordResetTokenHandler,
 	)
 
+	// Sessions routes
+	router.HandlerFunc(
+		http.MethodDelete,
+		"/v1/sessions/:uuid",
+		app.requireAuthenticatedUser(app.deleteSessionHandler),
+	)
+
 	return app.recoverPanic(app.rateLimit(app.authenticate(router)))
 }

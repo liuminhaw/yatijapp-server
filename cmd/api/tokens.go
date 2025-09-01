@@ -11,19 +11,30 @@ import (
 )
 
 type AuthenticationToken struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	SessionUUID  uuid.UUID `json:"session_id"`
 }
 
 func (app *application) generateAuthenticationToken(
-	uuid uuid.UUID,
+	userUUID, sessionUUID uuid.UUID,
 	accessTokenTTL, refreshTokenTTL time.Duration,
 ) (AuthenticationToken, error) {
-	accessToken, err := app.models.Tokens.New(uuid, accessTokenTTL, data.ScopeAuthentication)
+	accessToken, err := app.models.Tokens.New(
+		userUUID,
+		sessionUUID,
+		accessTokenTTL,
+		data.ScopeAuthentication,
+	)
 	if err != nil {
 		return AuthenticationToken{}, err
 	}
-	refreshToken, err := app.models.Tokens.New(uuid, refreshTokenTTL, data.ScopeRefresh)
+	refreshToken, err := app.models.Tokens.New(
+		userUUID,
+		sessionUUID,
+		refreshTokenTTL,
+		data.ScopeRefresh,
+	)
 	if err != nil {
 		return AuthenticationToken{}, err
 	}
@@ -31,7 +42,26 @@ func (app *application) generateAuthenticationToken(
 	return AuthenticationToken{
 		AccessToken:  accessToken.Plaintext,
 		RefreshToken: refreshToken.Plaintext,
+		SessionUUID:  sessionUUID,
 	}, nil
+}
+
+func (app *application) renewAuthenticationToken(
+	token string,
+	accessTokenTTL, refreshTokenTTL time.Duration,
+) (AuthenticationToken, error) {
+	currToken, err := app.models.Tokens.Get(token, data.ScopeRefresh)
+	if err != nil {
+		return AuthenticationToken{}, err
+	}
+
+	sessionUUID := currToken.SessionUUID
+	return app.generateAuthenticationToken(
+		currToken.UserUUID,
+		sessionUUID,
+		accessTokenTTL,
+		refreshTokenTTL,
+	)
 }
 
 // createActivationTokenHandler generates a new activation token for a user and
@@ -71,7 +101,7 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.UUID, 3*24*time.Hour, data.ScopeActivation)
+	token, err := app.models.Tokens.New(user.UUID, uuid.Nil, 3*24*time.Hour, data.ScopeActivation)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -138,7 +168,17 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 	}
 
 	// TODO: authentication token expiration time configuration
-	token, err := app.generateAuthenticationToken(user.UUID, 15*time.Minute, 24*time.Hour)
+	sessionUUID, err := uuid.NewV7()
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+	token, err := app.generateAuthenticationToken(
+		user.UUID,
+		sessionUUID,
+		15*time.Minute,
+		24*time.Hour,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -168,18 +208,7 @@ func (app *application) refreshAuthenticationTokenHandler(w http.ResponseWriter,
 		return
 	}
 
-	user, err := app.models.Users.GetForToken(data.ScopeRefresh, input.RefreshToken)
-	if err != nil {
-		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
-			app.invalidAuthenticationTokenResponse(w, r)
-		default:
-			app.serverErrorResponse(w, r, err)
-		}
-		return
-	}
-
-	token, err := app.generateAuthenticationToken(user.UUID, 15*time.Minute, 24*time.Hour)
+	token, err := app.renewAuthenticationToken(input.RefreshToken, 15*time.Minute, 24*time.Hour)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -234,7 +263,12 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.UUID, 30*time.Minute, data.ScopePasswordReset)
+	token, err := app.models.Tokens.New(
+		user.UUID,
+		uuid.Nil,
+		30*time.Minute,
+		data.ScopePasswordReset,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
