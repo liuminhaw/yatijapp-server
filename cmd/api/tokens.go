@@ -101,7 +101,12 @@ func (app *application) createActivationTokenHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.UUID, uuid.Nil, 3*24*time.Hour, data.ScopeActivation)
+	token, err := app.models.Tokens.New(
+		user.UUID,
+		uuid.Nil,
+		app.config.tokens.activationTokenTTL,
+		data.ScopeActivation,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -176,8 +181,8 @@ func (app *application) createAuthenticationTokenHandler(w http.ResponseWriter, 
 	token, err := app.generateAuthenticationToken(
 		user.UUID,
 		sessionUUID,
-		15*time.Minute,
-		24*time.Hour,
+		app.config.tokens.accessTokenTTL,
+		app.config.tokens.refreshTokenTTL,
 	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -208,9 +213,21 @@ func (app *application) refreshAuthenticationTokenHandler(w http.ResponseWriter,
 		return
 	}
 
-	token, err := app.renewAuthenticationToken(input.RefreshToken, 15*time.Minute, 24*time.Hour)
+	token, err := app.renewAuthenticationToken(
+		input.RefreshToken,
+		app.config.tokens.accessTokenTTL,
+		app.config.tokens.refreshTokenTTL,
+	)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.logger.Info("refresh token not found: " + input.RefreshToken)
+			v.AddError("token", "invalid or expired refresh token")
+			app.failedValidationResponse(w, r, v.Errors)
+		default:
+			app.logger.Error("failed to renew authentication token: " + err.Error())
+			app.serverErrorResponse(w, r, err)
+		}
 		return
 	}
 
@@ -266,7 +283,7 @@ func (app *application) createPasswordResetTokenHandler(w http.ResponseWriter, r
 	token, err := app.models.Tokens.New(
 		user.UUID,
 		uuid.Nil,
-		30*time.Minute,
+		app.config.tokens.passwordResetTokenTTL,
 		data.ScopePasswordReset,
 	)
 	if err != nil {

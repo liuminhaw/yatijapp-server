@@ -14,16 +14,18 @@ var (
 )
 
 type Models struct {
-	Targets TargetModel
-	Tokens  TokenModel
-	Users   UserModel
+	Targets    TargetModel
+	Activities ActivityModel
+	Tokens     TokenModel
+	Users      UserModel
 }
 
 // NewModels returns a Models struct containing the initialized TargetModel.
 func NewModels(db *sql.DB, jieba *gojieba.Jieba) Models {
 	return Models{
-		Targets: TargetModel{DB: db, Jieba: jieba},
-		Tokens:  TokenModel{DB: db},
-		Users:   UserModel{DB: db},
+		Targets:    TargetModel{DB: db, Jieba: jieba},
+		Activities: ActivityModel{DB: db, Jieba: jieba},
+		Tokens:     TokenModel{DB: db},
+		Users:      UserModel{DB: db},
 	}
 }

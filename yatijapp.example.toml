@@ -8,11 +8,17 @@
 # rps = 2.0
 # burst = 4
 
+[server.tokens]
+# activationTokenTTL = "10m"
+# passwordResetTokenTTL = "10m"
+# accessTokenTTL = "1h"
+# refreshTokenTTL = "1d"
+
 [database]
 # dsn = "postgres://username:password@host:port/db?sslmode=disable"
-# max_open_conns = 25
-# max_idle_conns = 25
-# max_idle_time = 15m
+# maxOpenConns = 25
+# maxIdleConns = 25
+# maxIdleTime = 15m
 
 [mailer]
 # sender = "Yatijapp <no-reply@yatijapp.fakemail.com>"
@@ -22,4 +28,4 @@
 # port = 25
 # username = ""
 # password = ""
-
+ 

@@ -36,7 +36,7 @@ CREATE INDEX "acls_activities_user_uuid_idx"
 CREATE INDEX "acls_activities_resource_uuid_idx"
     ON "acls_activities" ("resource_uuid");
 
--- Partition for activities
+-- Partition for sessions
 CREATE TABLE "acls_sessions" PARTITION OF "acls"
     FOR VALUES IN ('session');
 

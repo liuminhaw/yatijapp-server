@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/data"
@@ -61,7 +60,12 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	token, err := app.models.Tokens.New(user.UUID, uuid.Nil, 3*24*time.Hour, data.ScopeActivation)
+	token, err := app.models.Tokens.New(
+		user.UUID,
+		uuid.Nil,
+		app.config.tokens.activationTokenTTL,
+		data.ScopeActivation,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

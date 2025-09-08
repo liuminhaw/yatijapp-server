@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/data"
 	"github.com/liuminhaw/sessions-of-life/internal/tokenizer"
 	"github.com/liuminhaw/sessions-of-life/internal/validator"
 )
 
-func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) createActivityHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
+		TargetUUID  uuid.UUID      `json:"target_id"`
 		DueDate     data.InputDate `json:"due_date"`
 		Title       string         `json:"title"`
 		Description string         `json:"description"`
@@ -26,7 +28,8 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	target := data.Target{
+	activity := data.Activity{
+		TargetUUID:  input.TargetUUID,
 		DueDate:     sql.NullTime(input.DueDate),
 		Title:       input.Title,
 		Description: input.Description,
@@ -34,45 +37,21 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 		Status:      input.Status,
 	}
 
-	// Input validation
 	v := validator.New()
-	if data.ValidateTarget(v, &target); !v.Valid() {
+	if data.ValidateActivity(v, &activity); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
 	fts := data.GenFTS(
-		target.Title,
-		target.Description,
-		target.Notes,
-		app.models.Targets.Jieba,
+		activity.Title,
+		activity.Description,
+		activity.Notes,
+		app.models.Activities.Jieba,
 	)
 
 	user := app.contextGetUser(r)
-	err = app.models.Targets.Insert(&target, fts, user.UUID)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	headers := make(http.Header)
-	headers.Set("Location", fmt.Sprintf("/v1/targets/%s", target.UUID))
-
-	err = app.writeJSON(w, http.StatusCreated, envelope{"target": target}, headers)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-	}
-}
-
-func (app *application) showTargetHandler(w http.ResponseWriter, r *http.Request) {
-	id, err := app.readUUIDParam(r)
-	if err != nil {
-		app.notFoundResponse(w, r)
-		return
-	}
-
-	user := app.contextGetUser(r)
-	target, err := app.models.Targets.Get(id, user.UUID, "viewer")
+	err = app.models.Activities.Insert(&activity, fts, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
@@ -83,13 +62,42 @@ func (app *application) showTargetHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"target": target}, nil)
+	headers := make(http.Header)
+	headers.Set("Location", fmt.Sprintf("/v1/activities/%s", activity.UUID))
+
+	err = app.writeJSON(w, http.StatusCreated, envelope{"activity": activity}, headers)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
 }
 
-func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) showActivityHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := app.readUUIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	app.logger.Info("showActivityHandler id", "id", id)
+	user := app.contextGetUser(r)
+	activity, err := app.models.Activities.Get(id, user.UUID, "viewer")
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"activity": activity}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) updateActivityHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readUUIDParam(r)
 	if err != nil {
 		app.notFoundResponse(w, r)
@@ -97,7 +105,7 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	user := app.contextGetUser(r)
-	target, err := app.models.Targets.Get(id, user.UUID, "editor")
+	activity, err := app.models.Activities.Get(id, user.UUID, "editor")
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
@@ -122,28 +130,28 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	if input.Title != nil {
-		target.Title = *input.Title
+		activity.Title = *input.Title
 	}
 	if input.Description != nil {
-		target.Description = *input.Description
+		activity.Description = *input.Description
 	}
 	if input.Notes != nil {
-		target.Notes = *input.Notes
+		activity.Notes = *input.Notes
 	}
 	if input.DueDate != nil {
-		target.DueDate = sql.NullTime(*input.DueDate)
+		activity.DueDate = sql.NullTime(*input.DueDate)
 	}
 	if input.Status != nil {
-		target.Status = *input.Status
+		activity.Status = *input.Status
 	}
 
 	v := validator.New()
-	if data.ValidateTarget(v, target); !v.Valid() {
+	if data.ValidateActivity(v, activity); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	err = app.models.Targets.Update(target, user.UUID)
+	err = app.models.Activities.Update(activity, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrEditConflict):
@@ -154,13 +162,13 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"target": target}, nil)
+	err = app.writeJSON(w, http.StatusOK, envelope{"activity": activity}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
 }
 
-func (app *application) deleteTargetHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) deleteActivityHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := app.readUUIDParam(r)
 	if err != nil {
 		app.badRequestResponse(w, r, err)
@@ -168,7 +176,7 @@ func (app *application) deleteTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	user := app.contextGetUser(r)
-	err = app.models.Targets.Delete(id, user.UUID)
+	err = app.models.Activities.Delete(id, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
@@ -179,13 +187,13 @@ func (app *application) deleteTargetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"message": "target successfully deleted"}, nil)
+	err = app.writeJSON(w, http.StatusOK, envelope{"message": "activity successfully deleted"}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
 }
 
-func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) listActivitiesHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Search string
 		data.Filters
@@ -194,12 +202,11 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	v := validator.New()
 
 	qs := r.URL.Query()
-
 	input.Search = app.readString(qs, "search", "")
 	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
-	input.Filters.Sort = app.readString(qs, "sort", "serial_id")
+	input.Filters.Sort = app.readString(qs, "sort", "last_active")
 
 	input.Filters.SortSafelist = []string{
 		"serial_id",
@@ -220,16 +227,21 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	t := tokenizer.New(input.Search, app.models.Targets.Jieba)
+	t := tokenizer.New(input.Search, app.models.Activities.Jieba)
 
 	user := app.contextGetUser(r)
-	targets, metadata, err := app.models.Targets.GetAllForUser(*t, input.Filters, user.UUID)
+	activities, metadata, err := app.models.Activities.GetAll(*t, input.Filters, user.UUID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	err = app.writeJSON(w, http.StatusOK, envelope{"targets": targets, "metadata": metadata}, nil)
+	err = app.writeJSON(
+		w,
+		http.StatusOK,
+		envelope{"activities": activities, "metadata": metadata},
+		nil,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

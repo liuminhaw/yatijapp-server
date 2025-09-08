@@ -42,6 +42,33 @@ func (app *application) routes() http.Handler {
 		app.requireActivatedUser(app.deleteTargetHandler),
 	)
 
+	// Activities routes
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/activities",
+		app.requireActivatedUser(app.listActivitiesHandler),
+	)
+	router.HandlerFunc(
+		http.MethodPost,
+		"/v1/activities",
+		app.requireActivatedUser(app.createActivityHandler),
+	)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/activities/:uuid",
+		app.requireActivatedUser(app.showActivityHandler),
+	)
+	router.HandlerFunc(
+		http.MethodPatch,
+		"/v1/activities/:uuid",
+		app.requireActivatedUser(app.updateActivityHandler),
+	)
+	router.HandlerFunc(
+		http.MethodDelete,
+		"/v1/activities/:uuid",
+		app.requireActivatedUser(app.deleteActivityHandler),
+	)
+
 	// Users routes
 	router.HandlerFunc(
 		http.MethodGet,

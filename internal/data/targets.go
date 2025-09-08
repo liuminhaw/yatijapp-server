@@ -18,6 +18,7 @@ type Target struct {
 	CreatedAt   time.Time    `json:"created_at"`
 	DueDate     sql.NullTime `json:"due_date,omitzero"`
 	UpdatedAt   time.Time    `json:"updated_at"`
+	LastActive  time.Time    `json:"last_active"`
 	Title       string       `json:"title"`
 	Description string       `json:"description,omitzero"`
 	Notes       string       `json:"notes,omitzero"`
@@ -33,7 +34,7 @@ func ValidateTarget(v *validator.Validator, target *Target) {
 	v.Check(
 		validator.PermittedValue(target.Status, StatusSafelist...),
 		"status",
-		"must be one of 'queued', 'in progress', 'complete', or 'canceled'",
+		"must be one of 'queued', 'in progress', 'complete', 'canceled', or 'archived'",
 	)
 	if target.DueDate.Valid {
 		v.Check(
@@ -44,37 +45,13 @@ func ValidateTarget(v *validator.Validator, target *Target) {
 	}
 }
 
-// Full Text Search (FTS) struct type for Target
-type TargetFTS struct {
-	// UUID             uuid.UUID
-	TitleToken       *tokenizer.Tokenizer
-	DescriptionToken *tokenizer.Tokenizer
-	NotesToken       *tokenizer.Tokenizer
-	// TitleChineseTSVector       string `json:"title_chinese_tsv"`
-	// TitleEnglishTSVector       string `json:"title_english_tsv"`
-	// DescriptionChineseTSVector string `json:"description_chinese_tsv"`
-	// DescriptionEnglishTSVector string `json:"description_english_tsv"`
-}
-
-func GenTargetFTS(title, description, notes string, jieba *gojieba.Jieba) TargetFTS {
-	titleTokenizer := tokenizer.New(title, jieba)
-	descriptionTokenizer := tokenizer.New(description, jieba)
-	notesTokenizer := tokenizer.New(notes, jieba)
-
-	return TargetFTS{
-		TitleToken:       titleTokenizer,
-		DescriptionToken: descriptionTokenizer,
-		NotesToken:       notesTokenizer,
-	}
-}
-
 // TargetModel struct type wraps a sql.DB connection pool.
 type TargetModel struct {
 	DB    *sql.DB
 	Jieba *gojieba.Jieba
 }
 
-func (t TargetModel) Insert(target *Target, fts TargetFTS, userUUID uuid.UUID) error {
+func (t TargetModel) Insert(target *Target, fts FTS, userUUID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -87,15 +64,20 @@ func (t TargetModel) Insert(target *Target, fts TargetFTS, userUUID uuid.UUID) e
 			INSERT INTO acls (user_uuid, resource_type, resource_uuid, role_code)
 			SELECT $6, 'target', uuid, 'owner' FROM new_target
 		), new_fts AS (
-			INSERT INTO targets_fts (target_uuid, fts_chinese_tsv, fts_english_tsv)
-			SELECT
+			INSERT INTO targets_fts (
+				target_uuid, 
+				fts_chinese_tsv, 
+				fts_english_tsv, 
+				fts_chinese_notes_tsv, 
+				fts_english_notes_tsv
+			) SELECT
 				uuid,
 				setweight(to_tsvector('simple', $7), 'A') ||
-				setweight(to_tsvector('simple', $8), 'B') ||
-				setweight(to_tsvector('simple', $9), 'C'),
+				setweight(to_tsvector('simple', $8), 'B'),
 				setweight(to_tsvector('english', $10), 'A') ||
-				setweight(to_tsvector('english', $11), 'B') ||
-				setweight(to_tsvector('english', $12), 'C')
+				setweight(to_tsvector('english', $11), 'B'),
+				to_tsvector('simple', $9),
+				to_tsvector('english', $12)
 			FROM new_target
 		)
 		SELECT uuid, created_at, updated_at, version FROM new_target;
@@ -124,31 +106,38 @@ func (t TargetModel) Insert(target *Target, fts TargetFTS, userUUID uuid.UUID) e
 	return nil
 }
 
-func (t TargetModel) Get(uuid uuid.UUID) (*Target, error) {
+func (t TargetModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Target, error) {
 	query := `
 		SELECT 
-			uuid, 
-			created_at, 
-			due_date, 
-			updated_at, 
-			title, 
-			description, 
-			notes, 
-			status, 
-			version
-		FROM targets
-		WHERE uuid = $1`
+			t.uuid, 
+			t.created_at, 
+			t.due_date, 
+			t.updated_at, 
+			t.last_active,
+			t.title, 
+			t.description, 
+			t.notes, 
+			t.status, 
+			t.version
+		FROM targets t
+		JOIN acls a ON a.resource_type = 'target' AND a.resource_uuid = t.uuid
+		JOIN roles r ON a.role_code = r.code
+		WHERE uuid = $1 
+			AND a.user_uuid = $2 
+			AND r.rank <= (SELECT rank FROM roles WHERE code = $3)
+	`
 
 	var target Target
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	err := t.DB.QueryRowContext(ctx, query, uuid).Scan(
+	err := t.DB.QueryRowContext(ctx, query, uuid, userUUID, minRole).Scan(
 		&target.UUID,
 		&target.CreatedAt,
 		&target.DueDate,
 		&target.UpdatedAt,
+		&target.LastActive,
 		&target.Title,
 		&target.Description,
 		&target.Notes,
@@ -167,13 +156,28 @@ func (t TargetModel) Get(uuid uuid.UUID) (*Target, error) {
 	return &target, nil
 }
 
-func (t TargetModel) Update(target *Target) error {
+func (t TargetModel) Update(target *Target, userUUID uuid.UUID) error {
 	query := `
 		UPDATE targets
-		SET title = $1, description = $2, notes = $3, 
-			due_date = $4, status = $5, version = version + 1, updated_at = NOW()
-		WHERE uuid = $6 AND version = $7
-		RETURNING created_at, updated_at, version`
+		SET title = $1, 
+			description = $2, 
+			notes = $3, 
+			due_date = $4, 
+			status = $5, 
+			version = version + 1, 
+			updated_at = NOW(), 
+			last_active = NOW()
+		WHERE uuid = $6 AND version = $7 AND EXISTS (
+			SELECT 1
+			FROM acls a
+			JOIN roles r ON a.role_code = r.code
+			WHERE a.resource_type = 'target'
+			AND a.resource_uuid = $6
+			AND a.user_uuid = $8
+			AND r.rank <= (SELECT rank FROM roles WHERE code = 'editor')
+		)
+		RETURNING created_at, updated_at, version
+	`
 
 	args := []any{
 		target.Title,
@@ -183,6 +187,7 @@ func (t TargetModel) Update(target *Target) error {
 		target.Status,
 		target.UUID,
 		target.Version,
+		userUUID,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -202,15 +207,24 @@ func (t TargetModel) Update(target *Target) error {
 	return nil
 }
 
-func (t TargetModel) Delete(uuid uuid.UUID) error {
+func (t TargetModel) Delete(uuid, userUUID uuid.UUID) error {
 	query := `
 		DELETE FROM targets
-		WHERE uuid = $1`
+		WHERE uuid = $1 AND EXISTS (
+			SELECT 1
+			FROM acls a
+			JOIN roles r ON a.role_code = r.code
+			WHERE a.resource_type = 'target'	
+			AND a.resource_uuid = $1
+			AND a.user_uuid = $2
+			AND r.rank <= (SELECT rank FROM roles WHERE code = 'owner')
+		)
+	`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	result, err := t.DB.ExecContext(ctx, query, uuid)
+	result, err := t.DB.ExecContext(ctx, query, uuid, userUUID)
 	if err != nil {
 		return err
 	}
@@ -283,7 +297,6 @@ func (t TargetModel) GetAll(
 			&target.UpdatedAt,
 			&target.Title,
 			&target.Description,
-			// &target.Notes,
 			&target.Status,
 			&target.Version,
 			&target.SerialID,
@@ -318,6 +331,7 @@ func (t TargetModel) GetAllForUser(
 			t.created_at,
 			t.due_date,
 			t.updated_at,
+			t.last_active,
 			t.title,
 			t.description,
 			t.status,
@@ -370,9 +384,9 @@ func (t TargetModel) GetAllForUser(
 			&target.CreatedAt,
 			&target.DueDate,
 			&target.UpdatedAt,
+			&target.LastActive,
 			&target.Title,
 			&target.Description,
-			// &target.Notes,
 			&target.Status,
 			&target.Version,
 			&target.SerialID,

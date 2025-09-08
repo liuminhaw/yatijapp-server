@@ -77,13 +77,14 @@ func (m TokenModel) Get(tokenPlaintext, scope string) (*Token, error) {
 	query := `
 		SELECT hash, user_uuid, session_uuid, expiry, scope
 		FROM tokens 
-		WHERE hash = $1 AND scope = $2`
+		WHERE hash = $1 AND scope = $2 AND expiry > $3`
+	args := []any{tokenHash[:], scope, time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var token Token
-	err := m.DB.QueryRowContext(ctx, query, tokenHash[:], scope).Scan(
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
 		&token.Hash,
 		&token.UserUUID,
 		&token.SessionUUID,

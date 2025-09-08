@@ -33,6 +33,12 @@ type config struct {
 		burst   int
 		enabled bool
 	}
+	tokens struct {
+		activationTokenTTL    time.Duration
+		passwordResetTokenTTL time.Duration
+		accessTokenTTL        time.Duration
+		refreshTokenTTL       time.Duration
+	}
 	smtp struct {
 		host     string
 		port     int
@@ -90,6 +96,10 @@ func main() {
 		"Yatijapp <no-reply@yatijapp.fakemail.com>",
 		"Sender email address",
 	)
+	flag.Duration("ttl-activation-token", 10*time.Minute, "Activation token lifetime")
+	flag.Duration("ttl-password-reset-token", 10*time.Minute, "Password reset token lifetime")
+	flag.Duration("ttl-access-token", 1*time.Hour, "Access token lifetime")
+	flag.Duration("ttl-refresh-token", 24*time.Hour, "Refresh token lifetime")
 	flag.Parse()
 
 	cfg, err := configSetup(vConf)
@@ -170,6 +180,10 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.SetDefault("server.limiter.rps", 2.0)
 	conf.SetDefault("server.limiter.burst", 4)
 	conf.SetDefault("server.limiter.enabled", true)
+	conf.SetDefault("server.tokens.activationTokenTTL", 10*time.Minute)
+	conf.SetDefault("server.tokens.passwordResetTokenTTL", 10*time.Minute)
+	conf.SetDefault("server.tokens.accessTokenTTL", 1*time.Hour)
+	conf.SetDefault("server.tokens.refreshTokenTTL", 24*time.Hour)
 	conf.SetDefault("database.maxOpenConns", 25)
 	conf.SetDefault("database.maxIdleConns", 25)
 	conf.SetDefault("database.maxIdleTimeInMinutes", 15)
@@ -191,6 +205,10 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.BindPFlag("server.limiter.rps", flag.Lookup("limiter-rps"))
 	conf.BindPFlag("server.limiter.burst", flag.Lookup("limiter-burst"))
 	conf.BindPFlag("server.limiter.enabled", flag.Lookup("limiter-enabled"))
+	conf.BindPFlag("server.tokens.activationTokenTTL", flag.Lookup("ttl-activation-token"))
+	conf.BindPFlag("server.tokens.passwordResetTokenTTL", flag.Lookup("ttl-password-reset-token"))
+	conf.BindPFlag("server.tokens.accessTokenTTL", flag.Lookup("ttl-access-token"))
+	conf.BindPFlag("server.tokens.refreshTokenTTL", flag.Lookup("ttl-refresh-token"))
 	conf.BindPFlag("database.dsn", flag.Lookup("db-dsn"))
 	conf.BindPFlag("database.maxOpenConns", flag.Lookup("db-max-open-conns"))
 	conf.BindPFlag("database.maxIdleConns", flag.Lookup("db-max-idle-conns"))
@@ -224,6 +242,17 @@ func configSetup(conf *viper.Viper) (config, error) {
 			rps:     conf.GetFloat64("server.limiter.rps"),
 			burst:   conf.GetInt("server.limiter.burst"),
 			enabled: conf.GetBool("server.limiter.enabled"),
+		},
+		tokens: struct {
+			activationTokenTTL    time.Duration
+			passwordResetTokenTTL time.Duration
+			accessTokenTTL        time.Duration
+			refreshTokenTTL       time.Duration
+		}{
+			activationTokenTTL:    conf.GetDuration("server.tokens.activationTokenTTL"),
+			passwordResetTokenTTL: conf.GetDuration("server.tokens.passwordResetTokenTTL"),
+			accessTokenTTL:        conf.GetDuration("server.tokens.accessTokenTTL"),
+			refreshTokenTTL:       conf.GetDuration("server.tokens.refreshTokenTTL"),
 		},
 		smtp: struct {
 			host     string

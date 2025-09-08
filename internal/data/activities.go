@@ -1,0 +1,411 @@
+package data
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/gofrs/uuid/v5"
+	"github.com/liuminhaw/sessions-of-life/internal/tokenizer"
+	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/yanyiwu/gojieba"
+)
+
+type Activity struct {
+	UUID        uuid.UUID    `json:"uuid"`
+	CreatedAt   time.Time    `json:"created_at"`
+	DueDate     sql.NullTime `json:"due_date,omitzero"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	LastActive  time.Time    `json:"last_active"`
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitzero"`
+	Notes       string       `json:"notes,omitzero"`
+	Version     int32        `json:"version"`
+	Status      Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
+	SerialID    int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
+	TargetUUID  uuid.UUID    `json:"target_uuid"`
+}
+
+func ValidateActivity(v *validator.Validator, activity *Activity) {
+	v.Check(activity.Title != "", "title", "must be provided")
+	v.Check(len(activity.Title) <= 200, "title", "must not be more than 200 characters long")
+	v.Check(activity.Status != "", "status", "must be provided")
+	v.Check(
+		validator.PermittedValue(activity.Status, StatusSafelist...),
+		"status",
+		"must be one of 'queued', 'in progress', 'complete', 'canceled', or 'archived'",
+	)
+	if activity.DueDate.Valid {
+		v.Check(
+			activity.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
+			"due_date",
+			"must be in the future",
+		)
+	}
+}
+
+// ActivityModel struct type wraps a sql.DB connection pool and a Jieba instance.
+type ActivityModel struct {
+	DB    *sql.DB
+	Jieba *gojieba.Jieba
+}
+
+func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	query := `
+	WITH new_activity AS (
+		INSERT INTO activities (target_uuid, title, description, notes, due_date, status)
+		SELECT t.uuid, $2, $3, $4, $5, $6
+        FROM targets t
+	    WHERE t.uuid = $1 AND EXISTS (
+			SELECT 1
+			FROM acls a
+			JOIN roles r ON a.role_code = r.code
+			WHERE a.resource_type = 'target'
+			AND a.resource_uuid = t.uuid
+			AND a.user_uuid = $7
+			AND r.rank <= (SELECT rank FROM roles WHERE code = 'editor')
+		)
+		RETURNING uuid, created_at, updated_at, version
+	), grant_acl AS (
+		INSERT INTO acls (user_uuid, resource_type, resource_uuid, role_code)
+		SELECT $7, 'activity', uuid, 'owner' FROM new_activity
+	), new_fts AS (
+		INSERT INTO activities_fts (
+			activity_uuid,
+			fts_chinese_tsv,
+			fts_english_tsv,
+			fts_chinese_notes_tsv,
+			fts_english_notes_tsv
+		) SELECT
+			uuid,
+			setweight(to_tsvector('simple', $8), 'A') ||
+			setweight(to_tsvector('simple', $9), 'B'),
+			setweight(to_tsvector('english', $11), 'A') ||
+			setweight(to_tsvector('english', $12), 'B'),
+			to_tsvector('simple', $10),
+			to_tsvector('english', $13)
+		FROM new_activity
+	)
+	SELECT uuid, created_at, updated_at, version FROM new_activity;
+	`
+	// Consider adding index on acls_targets
+	// CREATE INDEX ON acls_target (resource_uuid, user_uuid, role_code);
+
+	args := []any{
+		activity.TargetUUID,
+		activity.Title,
+		activity.Description,
+		activity.Notes,
+		activity.DueDate,
+		activity.Status,
+		userUUID,
+		fts.TitleToken.Chinese,
+		fts.DescriptionToken.Chinese,
+		fts.NotesToken.Chinese,
+		fts.TitleToken.English,
+		fts.DescriptionToken.English,
+		fts.NotesToken.English,
+	}
+
+	err := m.DB.QueryRowContext(ctx, query, args...).
+		Scan(&activity.UUID, &activity.CreatedAt, &activity.UpdatedAt, &activity.Version)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrRecordNotFound
+		default:
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity, error) {
+	query := `
+		WITH cutoff AS (
+			SELECT rank AS cutoff
+			FROM roles
+			WHERE code = $3
+		)
+		SELECT 
+			a.uuid,
+			a.created_at,
+			a.due_date,
+			a.updated_at,
+			a.last_active,
+			a.title,
+			a.description,
+			a.notes,
+			a.status,
+			a.version,
+			a.target_uuid
+		FROM activities a CROSS JOIN cutoff c 
+		WHERE a.uuid = $1
+			AND (
+				EXISTS (
+					SELECT 1
+					FROM acls ac
+					JOIN roles r ON ac.role_code = r.code
+					WHERE ac.resource_type = 'activity'
+						AND ac.resource_uuid = a.uuid
+						AND ac.user_uuid = $2
+						AND r.rank <= c.cutoff
+				)
+				OR 
+				EXISTS (
+					SELECT 1
+					FROM acls ac
+					JOIN roles r ON ac.role_code = r.code
+					WHERE ac.resource_type = 'target'
+						AND ac.resource_uuid = a.target_uuid
+						AND ac.user_uuid = $2
+						AND r.rank <= c.cutoff
+				)
+			);`
+	args := []any{uuid, userUUID, minRole}
+
+	var activity Activity
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
+		&activity.UUID,
+		&activity.CreatedAt,
+		&activity.DueDate,
+		&activity.UpdatedAt,
+		&activity.LastActive,
+		&activity.Title,
+		&activity.Description,
+		&activity.Notes,
+		&activity.Status,
+		&activity.Version,
+		&activity.TargetUUID,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+
+	return &activity, nil
+}
+
+func (m ActivityModel) Update(activity *Activity, userUUID uuid.UUID) error {
+	query := `
+		WITH cutoff AS (
+			SELECT rank AS cutoff
+			FROM roles	
+			WHERE code = 'editor'
+		)
+		UPDATE activities AS a 
+		SET title = $1,
+			description = $2,
+			notes = $3,
+			due_date = $4,
+			status = $5,
+			version = version + 1,
+			updated_at = NOW(),
+			last_active = NOW()
+		FROM cutoff c
+		WHERE a.uuid = $6 AND a.version = $7 AND (
+			EXISTS (
+				SELECT 1
+				FROM acls ac
+				JOIN roles r ON ac.role_code = r.code
+				WHERE ac.resource_type = 'activity'
+				AND ac.resource_uuid = a.uuid
+				AND ac.user_uuid = $8
+				AND r.rank <= c.cutoff
+			) 
+			OR 
+			EXISTS (
+				SELECT 1
+				FROM acls ac
+				JOIN roles r ON ac.role_code = r.code
+				WHERE ac.resource_type = 'target'
+				AND ac.resource_uuid = a.target_uuid
+				AND ac.user_uuid = $8
+				AND r.rank <= c.cutoff
+			)
+		)
+		RETURNING created_at, updated_at, version
+	`
+
+	args := []any{
+		activity.Title,
+		activity.Description,
+		activity.Notes,
+		activity.DueDate,
+		activity.Status,
+		activity.UUID,
+		activity.Version,
+		userUUID,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.DB.QueryRowContext(ctx, query, args...).
+		Scan(&activity.CreatedAt, &activity.UpdatedAt, &activity.Version)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrRecordNotFound
+		default:
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m ActivityModel) Delete(uuid, userUUID uuid.UUID) error {
+	query := `
+		WITH cutoff AS (
+			SELECT rank AS cutoff
+			FROM roles	
+			WHERE code = 'owner'
+		)
+		DELETE FROM activities AS a USING cutoff AS c
+		WHERE a.uuid = $1 AND (
+			EXISTS (
+				SELECT 1
+				FROM acls ac
+				JOIN roles r ON ac.role_code = r.code
+				WHERE ac.resource_type = 'activity'
+				AND ac.resource_uuid = a.uuid
+				AND ac.user_uuid = $2
+				AND r.rank <= c.cutoff
+			)
+			OR
+			EXISTS (
+				SELECT 1
+				FROM acls ac
+				JOIN roles r ON ac.role_code = r.code
+				WHERE ac.resource_type = 'target'
+				AND ac.resource_uuid = a.target_uuid
+				AND ac.user_uuid = $2
+				AND r.rank <= c.cutoff
+			)
+		)`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	result, err := m.DB.ExecContext(ctx, query, uuid, userUUID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+
+	return nil
+}
+
+func (m ActivityModel) GetAll(
+	token tokenizer.Tokenizer,
+	filters Filters,
+	userUUID uuid.UUID,
+) ([]*Activity, Metadata, error) {
+	query := fmt.Sprintf(`
+		SELECT
+			count(*) OVER(),
+			a.uuid,
+			a.created_at,
+			a.due_date,
+			a.updated_at,
+			a.last_active,
+			a.title,
+			a.description,
+			a.status,
+			a.version,
+			a.serial_id,
+			a.target_uuid,
+			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
+				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
+		FROM activities_fts fts
+		JOIN activities a ON fts.activity_uuid = a.uuid
+		JOIN acls_activities ac ON a.uuid = ac.resource_uuid
+		WHERE (fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1) OR $1 = '')
+			AND (fts.fts_english_tsv @@ plainto_tsquery('english', $2) OR $2 = '')
+			AND (
+				CASE
+					WHEN $3 = '' THEN TRUE
+					ELSE status = $3::statuses
+				END
+			)
+			AND ac.user_uuid = $4
+		ORDER BY %s %s, rank DESC, serial_id DESC
+		LIMIT $5 OFFSET $6`, filters.sortColumn(), filters.sortDirection())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	args := []any{
+		token.Chinese,
+		token.English,
+		filters.Status,
+		userUUID,
+		filters.limit(),
+		filters.offset(),
+	}
+
+	rows, err := m.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, Metadata{}, err
+	}
+	defer rows.Close()
+
+	totalRecords := 0
+	activities := []*Activity{}
+	for rows.Next() {
+		var activity Activity
+		var ignored float64
+
+		err := rows.Scan(
+			&totalRecords,
+			&activity.UUID,
+			&activity.CreatedAt,
+			&activity.DueDate,
+			&activity.UpdatedAt,
+			&activity.LastActive,
+			&activity.Title,
+			&activity.Description,
+			&activity.Status,
+			&activity.Version,
+			&activity.SerialID,
+			&activity.TargetUUID,
+			&ignored,
+		)
+		if err != nil {
+			return nil, Metadata{}, err
+		}
+
+		activities = append(activities, &activity)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, Metadata{}, err
+	}
+
+	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
+
+	return activities, metadata, nil
+}
