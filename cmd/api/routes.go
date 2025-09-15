@@ -41,6 +41,11 @@ func (app *application) routes() http.Handler {
 		"/v1/targets/:uuid",
 		app.requireActivatedUser(app.deleteTargetHandler),
 	)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/targets/:uuid/activities",
+		app.requireActivatedUser(app.listTargetActivitiesHandler),
+	)
 
 	// Activities routes
 	router.HandlerFunc(

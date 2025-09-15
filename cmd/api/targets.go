@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/data"
 	"github.com/liuminhaw/sessions-of-life/internal/tokenizer"
 	"github.com/liuminhaw/sessions-of-life/internal/validator"
@@ -199,20 +200,9 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
-	input.Filters.Sort = app.readString(qs, "sort", "serial_id")
+	input.Filters.Sort = app.readString(qs, "sort", "-last_active")
 
-	input.Filters.SortSafelist = []string{
-		"serial_id",
-		"title",
-		"created_at",
-		"due_date",
-		"last_active",
-		"-serial_id",
-		"-title",
-		"-created_at",
-		"-due_date",
-		"-last_active",
-	}
+	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
@@ -230,6 +220,60 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	err = app.writeJSON(w, http.StatusOK, envelope{"targets": targets, "metadata": metadata}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) listTargetActivitiesHandler(w http.ResponseWriter, r *http.Request) {
+	targetUUID, err := app.readUUIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	var input struct {
+		Search  string
+		Filters data.Filters
+	}
+
+	v := validator.New()
+
+	qs := r.URL.Query()
+	input.Search = app.readString(r.URL.Query(), "search", "")
+	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
+	input.Filters.Page = app.readInt(qs, "page", 1, v)
+	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
+	input.Filters.Sort = app.readString(qs, "sort", "-last_active")
+	input.Filters.SortSafelist = data.SortSafelist
+	input.Filters.StatusSafelist = data.StatusFilterSafelist
+
+	if data.ValidateFilters(v, input.Filters); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	t := tokenizer.New(input.Search, app.models.Activities.Jieba)
+
+	user := app.contextGetUser(r)
+	activities, metadata, err := app.models.Activities.GetAll(
+		*t,
+		input.Filters,
+		uuid.NullUUID{Valid: true, UUID: targetUUID},
+		user.UUID,
+	)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(
+		w,
+		http.StatusOK,
+		envelope{"activities": activities, "metadata": metadata},
+		nil,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

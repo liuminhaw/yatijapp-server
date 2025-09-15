@@ -241,83 +241,6 @@ func (t TargetModel) Delete(uuid, userUUID uuid.UUID) error {
 	return nil
 }
 
-func (t TargetModel) GetAll(
-	token tokenizer.Tokenizer,
-	filters Filters,
-) ([]*Target, Metadata, error) {
-	query := fmt.Sprintf(`
-		SELECT
-			count(*) OVER(),
-			t.uuid,
-			t.created_at,
-			t.due_date,
-			t.updated_at,
-			t.title,
-			t.description,
-			t.status,
-			t.version,
-			t.serial_id,
-			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
-				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
-		FROM targets_fts fts
-		JOIN targets t ON fts.target_uuid = t.uuid
-		WHERE (fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1) OR $1 = '')
-			AND (fts.fts_english_tsv @@ plainto_tsquery('english', $2) OR $2 = '')
-			AND (
-				CASE
-					WHEN $3 = '' THEN TRUE
-					ELSE status = $3::statuses
-				END
-			)
-		ORDER BY %s %s, rank DESC, serial_id DESC
-		limit $4 offset $5`, filters.sortColumn(), filters.sortDirection())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	args := []any{token.Chinese, token.English, filters.Status, filters.limit(), filters.offset()}
-
-	rows, err := t.DB.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, Metadata{}, err
-	}
-	defer rows.Close()
-
-	totalRecords := 0
-	targets := []*Target{}
-	for rows.Next() {
-		var target Target
-		var ignored float64
-
-		err := rows.Scan(
-			&totalRecords,
-			&target.UUID,
-			&target.CreatedAt,
-			&target.DueDate,
-			&target.UpdatedAt,
-			&target.Title,
-			&target.Description,
-			&target.Status,
-			&target.Version,
-			&target.SerialID,
-			&ignored,
-		)
-		if err != nil {
-			return nil, Metadata{}, err
-		}
-
-		targets = append(targets, &target)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, Metadata{}, err
-	}
-
-	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
-
-	return targets, metadata, nil
-}
-
 func (t TargetModel) GetAllForUser(
 	token tokenizer.Tokenizer,
 	filters Filters,
@@ -351,7 +274,7 @@ func (t TargetModel) GetAllForUser(
 				END
 			)
 			AND a.user_uuid = $4
-		ORDER BY %s %s, rank DESC, serial_id DESC
+		ORDER BY t.%s %s, rank DESC, t.serial_id DESC
 		LIMIT $5 OFFSET $6`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

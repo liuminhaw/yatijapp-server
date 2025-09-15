@@ -27,3 +27,16 @@ var StatusFilterSafelist = []Status{
 	StatusArchived,
 	StatusAny, // Allow 'any' for filtering purposes
 }
+
+var SortSafelist = []string{
+	"serial_id",
+	"title",
+	"created_at",
+	"due_date",
+	"last_active",
+	"-serial_id",
+	"-title",
+	"-created_at",
+	"-due_date",
+	"-last_active",
+}

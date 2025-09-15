@@ -26,6 +26,7 @@ type Activity struct {
 	Status      Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
 	SerialID    int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
 	TargetUUID  uuid.UUID    `json:"target_uuid"`
+	TargetTitle string       `json:"target_title"`
 }
 
 func ValidateActivity(v *validator.Validator, activity *Activity) {
@@ -144,8 +145,10 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 			a.notes,
 			a.status,
 			a.version,
-			a.target_uuid
+			a.target_uuid,
+			t.title
 		FROM activities a CROSS JOIN cutoff c 
+		JOIN targets t ON a.target_uuid = t.uuid
 		WHERE a.uuid = $1
 			AND (
 				EXISTS (
@@ -187,6 +190,7 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 		&activity.Status,
 		&activity.Version,
 		&activity.TargetUUID,
+		&activity.TargetTitle,
 	)
 	if err != nil {
 		switch {
@@ -201,11 +205,13 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 }
 
 func (m ActivityModel) Update(activity *Activity, userUUID uuid.UUID) error {
+	// TODO: Need to perform permission tests if collaboration is ever introduced
 	query := `
-		WITH cutoff AS (
-			SELECT rank AS cutoff
-			FROM roles	
-			WHERE code = 'editor'
+		WITH editor_cutoff AS (
+			SELECT rank AS cutoff FROM roles WHERE code = 'editor'
+		),
+		owner_cutoff AS (
+			SELECT rank AS cutoff FROM roles WHERE code = 'owner'
 		)
 		UPDATE activities AS a 
 		SET title = $1,
@@ -215,30 +221,55 @@ func (m ActivityModel) Update(activity *Activity, userUUID uuid.UUID) error {
 			status = $5,
 			version = version + 1,
 			updated_at = NOW(),
-			last_active = NOW()
-		FROM cutoff c
+			last_active = NOW(),
+			target_uuid = $8
+		FROM editor_cutoff ec, owner_cutoff oc
 		WHERE a.uuid = $6 AND a.version = $7 AND (
-			EXISTS (
-				SELECT 1
-				FROM acls ac
-				JOIN roles r ON ac.role_code = r.code
-				WHERE ac.resource_type = 'activity'
-				AND ac.resource_uuid = a.uuid
-				AND ac.user_uuid = $8
-				AND r.rank <= c.cutoff
-			) 
-			OR 
-			EXISTS (
-				SELECT 1
-				FROM acls ac
-				JOIN roles r ON ac.role_code = r.code
-				WHERE ac.resource_type = 'target'
-				AND ac.resource_uuid = a.target_uuid
-				AND ac.user_uuid = $8
-				AND r.rank <= c.cutoff
+			(
+				$8 IS NOT DISTINCT FROM a.target_uuid AND (
+					EXISTS (
+						SELECT 1
+						FROM acls ac
+						JOIN roles r ON ac.role_code = r.code
+						WHERE ac.resource_type = 'activity'
+						AND ac.resource_uuid = a.uuid
+						AND ac.user_uuid = $9
+						AND r.rank <= ec.cutoff
+					) 
+					OR 
+					EXISTS (
+						SELECT 1
+						FROM acls ac
+						JOIN roles r ON ac.role_code = r.code
+						WHERE ac.resource_type = 'target'
+						AND ac.resource_uuid = a.target_uuid
+						AND ac.user_uuid = $9
+						AND r.rank <= ec.cutoff
+					)
+				)
+			)
+			OR
+			(
+				$8 IS DISTINCT FROM a.target_uuid AND EXISTS (
+					SELECT 1
+					FROM acls ac
+					JOIN roles r ON ac.role_code = r.code
+					WHERE ac.resource_type = 'target'
+						AND ac.resource_uuid = a.target_uuid
+						AND ac.user_uuid = $9
+						AND r.rank <= oc.cutoff
+				) AND EXISTS (
+					SELECT 1
+					FROM acls ac
+					JOIN roles r ON ac.role_code = r.code
+					WHERE ac.resource_type = 'target'
+						AND ac.resource_uuid = $8
+						AND ac.user_uuid = $9
+						AND r.rank <= oc.cutoff
+				)
 			)
 		)
-		RETURNING created_at, updated_at, version
+		RETURNING created_at, updated_at, last_active, version
 	`
 
 	args := []any{
@@ -249,6 +280,7 @@ func (m ActivityModel) Update(activity *Activity, userUUID uuid.UUID) error {
 		activity.Status,
 		activity.UUID,
 		activity.Version,
+		activity.TargetUUID,
 		userUUID,
 	}
 
@@ -256,7 +288,7 @@ func (m ActivityModel) Update(activity *Activity, userUUID uuid.UUID) error {
 	defer cancel()
 
 	err := m.DB.QueryRowContext(ctx, query, args...).
-		Scan(&activity.CreatedAt, &activity.UpdatedAt, &activity.Version)
+		Scan(&activity.CreatedAt, &activity.UpdatedAt, &activity.LastActive, &activity.Version)
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -322,6 +354,7 @@ func (m ActivityModel) Delete(uuid, userUUID uuid.UUID) error {
 func (m ActivityModel) GetAll(
 	token tokenizer.Tokenizer,
 	filters Filters,
+	targetUUID uuid.NullUUID,
 	userUUID uuid.UUID,
 ) ([]*Activity, Metadata, error) {
 	query := fmt.Sprintf(`
@@ -338,22 +371,25 @@ func (m ActivityModel) GetAll(
 			a.version,
 			a.serial_id,
 			a.target_uuid,
+			t.title,
 			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
 				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
 		FROM activities_fts fts
 		JOIN activities a ON fts.activity_uuid = a.uuid
+		JOIN targets t ON a.target_uuid = t.uuid
 		JOIN acls_activities ac ON a.uuid = ac.resource_uuid
 		WHERE (fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1) OR $1 = '')
 			AND (fts.fts_english_tsv @@ plainto_tsquery('english', $2) OR $2 = '')
 			AND (
 				CASE
 					WHEN $3 = '' THEN TRUE
-					ELSE status = $3::statuses
+					ELSE a.status = $3::statuses
 				END
 			)
-			AND ac.user_uuid = $4
-		ORDER BY %s %s, rank DESC, serial_id DESC
-		LIMIT $5 OFFSET $6`, filters.sortColumn(), filters.sortDirection())
+			AND (a.target_uuid = $4 OR $4 IS NULL)
+			AND ac.user_uuid = $5
+		ORDER BY a.%s %s, rank DESC, serial_id DESC
+		LIMIT $6 OFFSET $7`, filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -362,6 +398,7 @@ func (m ActivityModel) GetAll(
 		token.Chinese,
 		token.English,
 		filters.Status,
+		targetUUID,
 		userUUID,
 		filters.limit(),
 		filters.offset(),
@@ -392,6 +429,7 @@ func (m ActivityModel) GetAll(
 			&activity.Version,
 			&activity.SerialID,
 			&activity.TargetUUID,
+			&activity.TargetTitle,
 			&ignored,
 		)
 		if err != nil {

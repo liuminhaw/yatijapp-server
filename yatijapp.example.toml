@@ -12,7 +12,7 @@
 # activationTokenTTL = "10m"
 # passwordResetTokenTTL = "10m"
 # accessTokenTTL = "1h"
-# refreshTokenTTL = "1d"
+# refreshTokenTTL = "24h"
 
 [database]
 # dsn = "postgres://username:password@host:port/db?sslmode=disable"

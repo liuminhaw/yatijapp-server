@@ -14,7 +14,7 @@ import (
 
 func (app *application) createActivityHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		TargetUUID  uuid.UUID      `json:"target_id"`
+		TargetUUID  uuid.UUID      `json:"target_uuid"`
 		DueDate     data.InputDate `json:"due_date"`
 		Title       string         `json:"title"`
 		Description string         `json:"description"`
@@ -122,6 +122,7 @@ func (app *application) updateActivityHandler(w http.ResponseWriter, r *http.Req
 		Notes       *string         `json:"notes"`
 		DueDate     *data.InputDate `json:"due_date"`
 		Status      *data.Status    `json:"status"`
+		TargetUUID  *uuid.UUID      `json:"target_uuid"`
 	}
 	err = app.readJSON(w, r, &input)
 	if err != nil {
@@ -143,6 +144,9 @@ func (app *application) updateActivityHandler(w http.ResponseWriter, r *http.Req
 	}
 	if input.Status != nil {
 		activity.Status = *input.Status
+	}
+	if input.TargetUUID != nil {
+		activity.TargetUUID = *input.TargetUUID
 	}
 
 	v := validator.New()
@@ -208,18 +212,7 @@ func (app *application) listActivitiesHandler(w http.ResponseWriter, r *http.Req
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "last_active")
 
-	input.Filters.SortSafelist = []string{
-		"serial_id",
-		"title",
-		"created_at",
-		"due_date",
-		"last_active",
-		"-serial_id",
-		"-title",
-		"-created_at",
-		"-due_date",
-		"-last_active",
-	}
+	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
@@ -230,7 +223,12 @@ func (app *application) listActivitiesHandler(w http.ResponseWriter, r *http.Req
 	t := tokenizer.New(input.Search, app.models.Activities.Jieba)
 
 	user := app.contextGetUser(r)
-	activities, metadata, err := app.models.Activities.GetAll(*t, input.Filters, user.UUID)
+	activities, metadata, err := app.models.Activities.GetAll(
+		*t,
+		input.Filters,
+		uuid.NullUUID{Valid: false},
+		user.UUID,
+	)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
