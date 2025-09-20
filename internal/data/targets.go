@@ -14,17 +14,20 @@ import (
 )
 
 type Target struct {
-	UUID        uuid.UUID    `json:"uuid"`
-	CreatedAt   time.Time    `json:"created_at"`
-	DueDate     sql.NullTime `json:"due_date,omitzero"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-	LastActive  time.Time    `json:"last_active"`
-	Title       string       `json:"title"`
-	Description string       `json:"description,omitzero"`
-	Notes       string       `json:"notes,omitzero"`
-	Version     int32        `json:"version"`
-	Status      Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
-	SerialID    int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
+	UUID            uuid.UUID    `json:"uuid"`
+	CreatedAt       time.Time    `json:"created_at"`
+	DueDate         sql.NullTime `json:"due_date,omitzero"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	LastActive      time.Time    `json:"last_active"`
+	Title           string       `json:"title"`
+	Description     string       `json:"description,omitzero"`
+	Notes           string       `json:"notes,omitzero"`
+	Version         int32        `json:"version"`
+	Status          Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
+	SerialID        int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
+	HasNotes        bool         `json:"has_notes"`
+	ActivitiesCount int64        `json:"activities_count"`
+	Role            string       `json:"role"` // The user's role for this target, e.g., "owner", "editor", "viewer"
 }
 
 func ValidateTarget(v *validator.Validator, target *Target) {
@@ -156,27 +159,40 @@ func (t TargetModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Target, err
 	return &target, nil
 }
 
-func (t TargetModel) Update(target *Target, userUUID uuid.UUID) error {
+func (t TargetModel) Update(target *Target, fts FTS, userUUID uuid.UUID) error {
 	query := `
-		UPDATE targets
-		SET title = $1, 
-			description = $2, 
-			notes = $3, 
-			due_date = $4, 
-			status = $5, 
-			version = version + 1, 
-			updated_at = NOW(), 
-			last_active = NOW()
-		WHERE uuid = $6 AND version = $7 AND EXISTS (
-			SELECT 1
-			FROM acls a
-			JOIN roles r ON a.role_code = r.code
-			WHERE a.resource_type = 'target'
-			AND a.resource_uuid = $6
-			AND a.user_uuid = $8
-			AND r.rank <= (SELECT rank FROM roles WHERE code = 'editor')
+		WITH update_target AS(
+			UPDATE targets AS t
+			SET title = $1, 
+				description = $2, 
+				notes = $3, 
+				due_date = $4, 
+				status = $5, 
+				version = version + 1, 
+				updated_at = NOW(), 
+				last_active = NOW()
+			WHERE t.uuid = $6 AND t.version = $7 AND EXISTS (
+				SELECT 1
+				FROM acls a
+				JOIN roles r ON a.role_code = r.code
+				WHERE a.resource_type = 'target'
+				AND a.resource_uuid = $6
+				AND a.user_uuid = $8
+				AND r.rank <= (SELECT rank FROM roles WHERE code = 'editor')
+			)
+			RETURNING t.uuid, t.created_at, t.updated_at, t.version
+		), update_fts AS (
+			UPDATE targets_fts AS fts
+			SET fts_chinese_tsv = setweight(to_tsvector('simple', $9), 'A') ||
+					setweight(to_tsvector('simple', $10), 'B'),
+				fts_english_tsv = setweight(to_tsvector('english', $12), 'A') ||
+					setweight(to_tsvector('english', $13), 'B'),
+				fts_chinese_notes_tsv = to_tsvector('simple', $11),
+				fts_english_notes_tsv = to_tsvector('english', $14)
+			FROM update_target ut
+			WHERE fts.target_uuid = ut.uuid
 		)
-		RETURNING created_at, updated_at, version
+		SELECT t.created_at, t.updated_at, t.version FROM update_target t;
 	`
 
 	args := []any{
@@ -188,6 +204,12 @@ func (t TargetModel) Update(target *Target, userUUID uuid.UUID) error {
 		target.UUID,
 		target.Version,
 		userUUID,
+		fts.TitleToken.Chinese,
+		fts.DescriptionToken.Chinese,
+		fts.NotesToken.Chinese,
+		fts.TitleToken.English,
+		fts.DescriptionToken.English,
+		fts.NotesToken.English,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -245,37 +267,83 @@ func (t TargetModel) GetAllForUser(
 	token tokenizer.Tokenizer,
 	filters Filters,
 	userUUID uuid.UUID,
-	// user User,
 ) ([]*Target, Metadata, error) {
 	query := fmt.Sprintf(`
+		WITH filtered AS MATERIALIZED (
+			SELECT t.uuid
+			FROM targets t
+			JOIN targets_fts fts ON fts.target_uuid = t.uuid
+			WHERE ($1 = '' OR fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1))
+				AND ($2 = '' OR fts.fts_english_tsv @@ plainto_tsquery('english', $2))
+				AND ($3 = '' OR t.status = $3::statuses)
+				AND EXISTS (
+					SELECT 1
+					FROM acls ac
+					JOIN roles r ON ac.role_code = r.code	
+					WHERE ac.user_uuid = $4
+					AND ac.resource_type = 'target'
+					AND ac.resource_uuid = t.uuid
+					AND r.rank <= (SELECT rank FROM roles WHERE code = 'viewer')
+				)
+		),
+		total AS (
+			SELECT COUNT(*) AS total_count FROM filtered
+		),
+		paged AS (
+			SELECT 
+				t.uuid,
+				t.created_at,
+				t.due_date,
+				t.updated_at,
+				t.last_active,
+				t.title,
+				t.description,
+				t.status,
+				t.version,
+				t.serial_id,
+				COALESCE(ss.activities_count, 0) AS activities_count,
+				(btrim(COALESCE(t.notes, '')) <> '') AS has_notes,
+				(CASE WHEN $1 <> '' THEN
+					ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
+				ELSE 0 END) + (CASE WHEN $2 <> '' THEN
+					ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2))
+				ELSE 0 END) AS rank
+			FROM filtered f
+			JOIN targets t ON f.uuid = t.uuid
+			JOIN targets_fts fts ON fts.target_uuid = t.uuid
+			LEFT JOIN (
+				SELECT a.target_uuid, COUNT(*) AS activities_count
+				FROM activities a
+				JOIN filtered fl ON fl.uuid = a.target_uuid
+				GROUP BY a.target_uuid
+			) ss ON ss.target_uuid = t.uuid
+			ORDER BY t.%s %s, rank DESC, t.serial_id DESC
+			LIMIT $5 OFFSET $6
+		)
 		SELECT
-			count(*) OVER(),
-			t.uuid,
-			t.created_at,
-			t.due_date,
-			t.updated_at,
-			t.last_active,
-			t.title,
-			t.description,
-			t.status,
-			t.version,
-			t.serial_id,
-			ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
-				+ ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2)) AS rank
-		FROM targets_fts fts
-		JOIN targets t ON fts.target_uuid = t.uuid
-		JOIN acls_targets a ON a.resource_uuid = t.uuid
-		WHERE (fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1) OR $1 = '')
-			AND (fts.fts_english_tsv @@ plainto_tsquery('english', $2) OR $2 = '')
-			AND (
-				CASE
-					WHEN $3 = '' THEN TRUE
-					ELSE status = $3::statuses
-				END
-			)
-			AND a.user_uuid = $4
-		ORDER BY t.%s %s, rank DESC, t.serial_id DESC
-		LIMIT $5 OFFSET $6`, filters.sortColumn(), filters.sortDirection())
+			total.total_count,
+			p.uuid,
+			p.created_at,
+			p.due_date,
+			p.updated_at,
+			p.last_active,
+			p.title,
+			p.description,
+			p.status,
+			p.version,
+			p.serial_id,
+			p.activities_count,
+			p.has_notes,
+			ac.role_code,
+			p.rank
+		FROM paged p
+		JOIN acls ac
+			ON ac.user_uuid = $4
+			AND ac.resource_type = 'target'
+			AND ac.resource_uuid = p.uuid
+		CROSS JOIN total
+		ORDER BY p.%s %s, p.rank DESC, p.serial_id DESC
+	`, filters.sortColumn(), filters.sortDirection(), filters.sortColumn(), filters.sortDirection())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -313,6 +381,9 @@ func (t TargetModel) GetAllForUser(
 			&target.Status,
 			&target.Version,
 			&target.SerialID,
+			&target.ActivitiesCount,
+			&target.HasNotes,
+			&target.Role,
 			&ignored,
 		)
 		if err != nil {

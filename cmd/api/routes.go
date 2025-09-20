@@ -74,6 +74,13 @@ func (app *application) routes() http.Handler {
 		app.requireActivatedUser(app.deleteActivityHandler),
 	)
 
+	// Sessions routes
+	router.HandlerFunc(http.MethodGet, "/v1/sessions", app.listSessionsHandler)
+	router.HandlerFunc(http.MethodPost, "/v1/sessions", app.createSessionHandler)
+	router.HandlerFunc(http.MethodGet, "/v1/sessions/:uuid", app.showSessionHandler)
+	router.HandlerFunc(http.MethodPatch, "/v1/sessions/:uuid", app.updateSessionHandler)
+	router.HandlerFunc(http.MethodDelete, "/v1/sessions/:uuid", app.deleteSessionHandler)
+
 	// Users routes
 	router.HandlerFunc(
 		http.MethodGet,
@@ -102,11 +109,10 @@ func (app *application) routes() http.Handler {
 		app.createPasswordResetTokenHandler,
 	)
 
-	// Sessions routes
 	router.HandlerFunc(
 		http.MethodDelete,
-		"/v1/sessions/:uuid",
-		app.requireAuthenticatedUser(app.deleteSessionHandler),
+		"/v1/tokens/sessions/:uuid",
+		app.requireAuthenticatedUser(app.deleteTokenSessionHandler),
 	)
 
 	return app.recoverPanic(app.rateLimit(app.authenticate(router)))

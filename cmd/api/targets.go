@@ -144,7 +144,14 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	err = app.models.Targets.Update(target, user.UUID)
+	fts := data.GenFTS(
+		target.Title,
+		target.Description,
+		target.Notes,
+		app.models.Targets.Jieba,
+	)
+
+	err = app.models.Targets.Update(target, fts, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrEditConflict):

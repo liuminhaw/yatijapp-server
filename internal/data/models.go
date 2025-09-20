@@ -16,6 +16,7 @@ var (
 type Models struct {
 	Targets    TargetModel
 	Activities ActivityModel
+	Sessions   SessionModel
 	Tokens     TokenModel
 	Users      UserModel
 }
@@ -25,6 +26,7 @@ func NewModels(db *sql.DB, jieba *gojieba.Jieba) Models {
 	return Models{
 		Targets:    TargetModel{DB: db, Jieba: jieba},
 		Activities: ActivityModel{DB: db, Jieba: jieba},
+		Sessions:   SessionModel{DB: db, Jieba: jieba},
 		Tokens:     TokenModel{DB: db},
 		Users:      UserModel{DB: db},
 	}

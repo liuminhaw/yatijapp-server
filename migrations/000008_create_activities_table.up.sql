@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS "activities" (
     "target_uuid" uuid NOT NULL REFERENCES targets (uuid) ON DELETE CASCADE
 );
 
+CREATE INDEX "activities_target_uuid_idx" ON "activities" ("target_uuid");

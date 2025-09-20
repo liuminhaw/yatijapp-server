@@ -78,7 +78,6 @@ func (app *application) showActivityHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	app.logger.Info("showActivityHandler id", "id", id)
 	user := app.contextGetUser(r)
 	activity, err := app.models.Activities.Get(id, user.UUID, "viewer")
 	if err != nil {
@@ -155,7 +154,14 @@ func (app *application) updateActivityHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	err = app.models.Activities.Update(activity, user.UUID)
+	fts := data.GenFTS(
+		activity.Title,
+		activity.Description,
+		activity.Notes,
+		app.models.Activities.Jieba,
+	)
+
+	err = app.models.Activities.Update(activity, fts, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrEditConflict):
@@ -199,18 +205,18 @@ func (app *application) deleteActivityHandler(w http.ResponseWriter, r *http.Req
 
 func (app *application) listActivitiesHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Search string
+		search string
 		data.Filters
 	}
 
 	v := validator.New()
 
 	qs := r.URL.Query()
-	input.Search = app.readString(qs, "search", "")
+	input.search = app.readString(qs, "search", "")
 	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
-	input.Filters.Sort = app.readString(qs, "sort", "last_active")
+	input.Filters.Sort = app.readString(qs, "sort", "-last_active")
 
 	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
@@ -220,7 +226,7 @@ func (app *application) listActivitiesHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	t := tokenizer.New(input.Search, app.models.Activities.Jieba)
+	t := tokenizer.New(input.search, app.models.Activities.Jieba)
 
 	user := app.contextGetUser(r)
 	activities, metadata, err := app.models.Activities.GetAll(
