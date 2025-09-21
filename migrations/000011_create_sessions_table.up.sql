@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS "sessions" (
     "updated_at" timestamp(0) with time zone NOT NULL DEFAULT NOW(),
     "notes" text NOT NULL DEFAULT '',
     "version" int NOT NULL DEFAULT 1,
-    "activity_uuid" uuid NOT NULL REFERENCES activities(uuid) ON DELETE CASCADE,
+    "action_uuid" uuid NOT NULL REFERENCES actions(uuid) ON DELETE CASCADE,
     CONSTRAINT ends_after_starts CHECK (ends_at IS NULL OR ends_at > starts_at)
 );
 
-CREATE INDEX "sessions_activities_uuid_idx" ON "sessions" ("activity_uuid");
+CREATE INDEX "sessions_actions_uuid_idx" ON "sessions" ("action_uuid");
 

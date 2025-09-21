@@ -14,20 +14,20 @@ import (
 )
 
 type Target struct {
-	UUID            uuid.UUID    `json:"uuid"`
-	CreatedAt       time.Time    `json:"created_at"`
-	DueDate         sql.NullTime `json:"due_date,omitzero"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	LastActive      time.Time    `json:"last_active"`
-	Title           string       `json:"title"`
-	Description     string       `json:"description,omitzero"`
-	Notes           string       `json:"notes,omitzero"`
-	Version         int32        `json:"version"`
-	Status          Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
-	SerialID        int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
-	HasNotes        bool         `json:"has_notes"`
-	ActivitiesCount int64        `json:"activities_count"`
-	Role            string       `json:"role"` // The user's role for this target, e.g., "owner", "editor", "viewer"
+	UUID         uuid.UUID    `json:"uuid"`
+	CreatedAt    time.Time    `json:"created_at"`
+	DueDate      sql.NullTime `json:"due_date,omitzero"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	LastActive   time.Time    `json:"last_active"`
+	Title        string       `json:"title"`
+	Description  string       `json:"description,omitzero"`
+	Notes        string       `json:"notes,omitzero"`
+	Version      int32        `json:"version"`
+	Status       Status       `json:"status,omitzero"` // e.g., "queued", "in progress", "complete", "canceled"
+	SerialID     int64        `json:"-"`               // Optional field for serial ID, not used in all contexts
+	HasNotes     bool         `json:"has_notes"`
+	ActionsCount int64        `json:"actions_count"`
+	Role         string       `json:"role"` // The user's role for this target, e.g., "owner", "editor", "viewer"
 }
 
 func ValidateTarget(v *validator.Validator, target *Target) {
@@ -301,7 +301,7 @@ func (t TargetModel) GetAllForUser(
 				t.status,
 				t.version,
 				t.serial_id,
-				COALESCE(ss.activities_count, 0) AS activities_count,
+				COALESCE(ss.actions_count, 0) AS actions_count,
 				(btrim(COALESCE(t.notes, '')) <> '') AS has_notes,
 				(CASE WHEN $1 <> '' THEN
 					ts_rank(fts.fts_chinese_tsv, plainto_tsquery('simple', $1))
@@ -312,8 +312,8 @@ func (t TargetModel) GetAllForUser(
 			JOIN targets t ON f.uuid = t.uuid
 			JOIN targets_fts fts ON fts.target_uuid = t.uuid
 			LEFT JOIN (
-				SELECT a.target_uuid, COUNT(*) AS activities_count
-				FROM activities a
+				SELECT a.target_uuid, COUNT(*) AS actions_count
+				FROM actions a
 				JOIN filtered fl ON fl.uuid = a.target_uuid
 				GROUP BY a.target_uuid
 			) ss ON ss.target_uuid = t.uuid
@@ -332,7 +332,7 @@ func (t TargetModel) GetAllForUser(
 			p.status,
 			p.version,
 			p.serial_id,
-			p.activities_count,
+			p.actions_count,
 			p.has_notes,
 			ac.role_code,
 			p.rank
@@ -381,7 +381,7 @@ func (t TargetModel) GetAllForUser(
 			&target.Status,
 			&target.Version,
 			&target.SerialID,
-			&target.ActivitiesCount,
+			&target.ActionsCount,
 			&target.HasNotes,
 			&target.Role,
 			&ignored,

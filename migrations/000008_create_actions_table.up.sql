@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS "activities" (
+CREATE TABLE IF NOT EXISTS "actions" (
     "uuid" uuid PRIMARY KEY DEFAULT uuidv7 (),
     "serial_id" bigserial NOT NULL UNIQUE,
     "title" text NOT NULL,
@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS "activities" (
     "target_uuid" uuid NOT NULL REFERENCES targets (uuid) ON DELETE CASCADE
 );
 
-CREATE INDEX "activities_target_uuid_idx" ON "activities" ("target_uuid");
+CREATE INDEX "actions_target_uuid_idx" ON "actions" ("target_uuid");

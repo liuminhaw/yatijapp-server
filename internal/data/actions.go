@@ -13,7 +13,7 @@ import (
 	"github.com/yanyiwu/gojieba"
 )
 
-type Activity struct {
+type Action struct {
 	UUID          uuid.UUID    `json:"uuid"`
 	CreatedAt     time.Time    `json:"created_at"`
 	DueDate       sql.NullTime `json:"due_date,omitzero"`
@@ -29,38 +29,38 @@ type Activity struct {
 	TargetTitle   string       `json:"target_title"`
 	HasNotes      bool         `json:"has_notes"`
 	SessionsCount int64        `json:"sessions_count"`
-	Role          string       `json:"role"` // The user's role for this activity, e.g., "owner", "editor", "viewer"
+	Role          string       `json:"role"` // The user's role for this action, e.g., "owner", "editor", "viewer"
 }
 
-func ValidateActivity(v *validator.Validator, activity *Activity) {
-	v.Check(activity.TargetUUID != uuid.Nil, "target_uuid", "must be provided")
-	v.Check(activity.Title != "", "title", "must be provided")
-	v.Check(len(activity.Title) <= 200, "title", "must not be more than 200 characters long")
-	v.Check(activity.Status != "", "status", "must be provided")
+func ValidateAction(v *validator.Validator, action *Action) {
+	v.Check(action.TargetUUID != uuid.Nil, "target_uuid", "must be provided")
+	v.Check(action.Title != "", "title", "must be provided")
+	v.Check(len(action.Title) <= 200, "title", "must not be more than 200 characters long")
+	v.Check(action.Status != "", "status", "must be provided")
 	v.Check(
-		validator.PermittedValue(activity.Status, StatusSafelist...),
+		validator.PermittedValue(action.Status, StatusSafelist...),
 		"status",
 		"must be one of 'queued', 'in progress', 'complete', 'canceled', or 'archived'",
 	)
-	if activity.DueDate.Valid {
+	if action.DueDate.Valid {
 		v.Check(
-			activity.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
+			action.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
 			"due_date",
 			"must be in the future",
 		)
 	}
 }
 
-// ActivityModel struct type wraps a sql.DB connection pool and a Jieba instance.
-type ActivityModel struct {
+// ActionModel struct type wraps a sql.DB connection pool and a Jieba instance.
+type ActionModel struct {
 	DB    *sql.DB
 	Jieba *gojieba.Jieba
 }
 
-func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) error {
+func (m ActionModel) Insert(action *Action, fts FTS, userUUID uuid.UUID) error {
 	query := `
-	WITH new_activity AS (
-		INSERT INTO activities (target_uuid, title, description, notes, due_date, status)
+	WITH new_action AS (
+		INSERT INTO actions (target_uuid, title, description, notes, due_date, status)
 		SELECT t.uuid, $2, $3, $4, $5, $6
         FROM targets t
 	    WHERE t.uuid = $1 AND EXISTS (
@@ -75,10 +75,10 @@ func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) e
 		RETURNING uuid, created_at, updated_at, version
 	), grant_acl AS (
 		INSERT INTO acls (user_uuid, resource_type, resource_uuid, role_code)
-		SELECT $7, 'activity', uuid, 'owner' FROM new_activity
+		SELECT $7, 'action', uuid, 'owner' FROM new_action
 	), new_fts AS (
-		INSERT INTO activities_fts (
-			activity_uuid,
+		INSERT INTO actions_fts (
+			action_uuid,
 			fts_chinese_tsv,
 			fts_english_tsv,
 			fts_chinese_notes_tsv,
@@ -91,9 +91,9 @@ func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) e
 			setweight(to_tsvector('english', $12), 'B'),
 			to_tsvector('simple', $10),
 			to_tsvector('english', $13)
-		FROM new_activity
+		FROM new_action
 	)
-	SELECT uuid, created_at, updated_at, version FROM new_activity;
+	SELECT uuid, created_at, updated_at, version FROM new_action;
 	`
 	// Consider adding index on acls_targets
 	// CREATE INDEX ON acls_target (resource_uuid, user_uuid, role_code);
@@ -102,12 +102,12 @@ func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) e
 	defer cancel()
 
 	args := []any{
-		activity.TargetUUID,
-		activity.Title,
-		activity.Description,
-		activity.Notes,
-		activity.DueDate,
-		activity.Status,
+		action.TargetUUID,
+		action.Title,
+		action.Description,
+		action.Notes,
+		action.DueDate,
+		action.Status,
 		userUUID,
 		fts.TitleToken.Chinese,
 		fts.DescriptionToken.Chinese,
@@ -118,7 +118,7 @@ func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) e
 	}
 
 	err := m.DB.QueryRowContext(ctx, query, args...).
-		Scan(&activity.UUID, &activity.CreatedAt, &activity.UpdatedAt, &activity.Version)
+		Scan(&action.UUID, &action.CreatedAt, &action.UpdatedAt, &action.Version)
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -131,7 +131,7 @@ func (m ActivityModel) Insert(activity *Activity, fts FTS, userUUID uuid.UUID) e
 	return nil
 }
 
-func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity, error) {
+func (m ActionModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Action, error) {
 	query := `
 		WITH cutoff AS (
 			SELECT rank AS cutoff
@@ -151,7 +151,7 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 			a.version,
 			a.target_uuid,
 			t.title
-		FROM activities a 
+		FROM actions a 
 		JOIN targets t ON a.target_uuid = t.uuid
 		WHERE a.uuid = $1
 			AND EXISTS (
@@ -160,7 +160,7 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 				JOIN roles r ON ac.role_code = r.code
 				JOIN cutoff c ON r.rank <= c.cutoff
 				WHERE ac.user_uuid = $2 AND (
-					(ac.resource_type = 'activity' AND ac.resource_uuid = a.uuid)
+					(ac.resource_type = 'action' AND ac.resource_uuid = a.uuid)
 					OR 
 					(ac.resource_type = 'target' AND ac.resource_uuid = a.target_uuid)
 				)
@@ -168,24 +168,24 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 		`
 	args := []any{uuid, userUUID, minRole}
 
-	var activity Activity
+	var action Action
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
-		&activity.UUID,
-		&activity.CreatedAt,
-		&activity.DueDate,
-		&activity.UpdatedAt,
-		&activity.LastActive,
-		&activity.Title,
-		&activity.Description,
-		&activity.Notes,
-		&activity.Status,
-		&activity.Version,
-		&activity.TargetUUID,
-		&activity.TargetTitle,
+		&action.UUID,
+		&action.CreatedAt,
+		&action.DueDate,
+		&action.UpdatedAt,
+		&action.LastActive,
+		&action.Title,
+		&action.Description,
+		&action.Notes,
+		&action.Status,
+		&action.Version,
+		&action.TargetUUID,
+		&action.TargetTitle,
 	)
 	if err != nil {
 		switch {
@@ -196,10 +196,10 @@ func (m ActivityModel) Get(uuid, userUUID uuid.UUID, minRole string) (*Activity,
 		}
 	}
 
-	return &activity, nil
+	return &action, nil
 }
 
-func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) error {
+func (m ActionModel) Update(action *Action, fts FTS, userUUID uuid.UUID) error {
 	// TODO: Need to perform permission tests if collaboration is ever introduced
 	query := `
 		WITH editor_cutoff AS (
@@ -208,8 +208,8 @@ func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) e
 		owner_cutoff AS (
 			SELECT rank AS cutoff FROM roles WHERE code = 'owner'
 		),
-		update_activity AS (
-			UPDATE activities AS a 
+		update_action AS (
+			UPDATE actions AS a 
 			SET title = $1,
 				description = $2,
 				notes = $3,
@@ -227,7 +227,7 @@ func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) e
 							FROM acls ac
 							JOIN roles r ON ac.role_code = r.code
 							JOIN editor_cutoff ec ON r.rank <= ec.cutoff
-							WHERE ac.resource_type = 'activity'
+							WHERE ac.resource_type = 'action'
 							AND ac.resource_uuid = a.uuid
 							AND ac.user_uuid = $9
 						) 
@@ -266,28 +266,28 @@ func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) e
 			)
 			RETURNING a.uuid, a.created_at, a.updated_at, a.last_active, a.version
 		), update_fts AS (
-			UPDATE activities_fts AS fts
+			UPDATE actions_fts AS fts
 			SET fts_chinese_tsv = setweight(to_tsvector('simple', $10), 'A') ||
 					setweight(to_tsvector('simple', $11), 'B'),
 				fts_english_tsv = setweight(to_tsvector('english', $13), 'A') ||
 					setweight(to_tsvector('english', $14), 'B'),
 				fts_chinese_notes_tsv = to_tsvector('simple', $12),
 				fts_english_notes_tsv = to_tsvector('english', $15)
-			FROM update_activity ua
-			WHERE fts.activity_uuid = ua.uuid
+			FROM update_action ua
+			WHERE fts.action_uuid = ua.uuid
 		)
-		SELECT a.created_at, a.updated_at, a.last_active, a.version FROM update_activity a;
+		SELECT a.created_at, a.updated_at, a.last_active, a.version FROM update_action a;
 	`
 
 	args := []any{
-		activity.Title,
-		activity.Description,
-		activity.Notes,
-		activity.DueDate,
-		activity.Status,
-		activity.UUID,
-		activity.Version,
-		activity.TargetUUID,
+		action.Title,
+		action.Description,
+		action.Notes,
+		action.DueDate,
+		action.Status,
+		action.UUID,
+		action.Version,
+		action.TargetUUID,
 		userUUID,
 		fts.TitleToken.Chinese,
 		fts.DescriptionToken.Chinese,
@@ -301,7 +301,7 @@ func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) e
 	defer cancel()
 
 	err := m.DB.QueryRowContext(ctx, query, args...).
-		Scan(&activity.CreatedAt, &activity.UpdatedAt, &activity.LastActive, &activity.Version)
+		Scan(&action.CreatedAt, &action.UpdatedAt, &action.LastActive, &action.Version)
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -314,20 +314,20 @@ func (m ActivityModel) Update(activity *Activity, fts FTS, userUUID uuid.UUID) e
 	return nil
 }
 
-func (m ActivityModel) Delete(uuid, userUUID uuid.UUID) error {
+func (m ActionModel) Delete(uuid, userUUID uuid.UUID) error {
 	query := `
 		WITH cutoff AS (
 			SELECT rank AS cutoff
 			FROM roles	
 			WHERE code = 'owner'
 		)
-		DELETE FROM activities AS a USING cutoff AS c
+		DELETE FROM actions AS a USING cutoff AS c
 		WHERE a.uuid = $1 AND (
 			EXISTS (
 				SELECT 1
 				FROM acls ac
 				JOIN roles r ON ac.role_code = r.code
-				WHERE ac.resource_type = 'activity'
+				WHERE ac.resource_type = 'action'
 				AND ac.resource_uuid = a.uuid
 				AND ac.user_uuid = $2
 				AND r.rank <= c.cutoff
@@ -364,17 +364,17 @@ func (m ActivityModel) Delete(uuid, userUUID uuid.UUID) error {
 	return nil
 }
 
-func (m ActivityModel) GetAll(
+func (m ActionModel) GetAll(
 	token tokenizer.Tokenizer,
 	filters Filters,
 	targetUUID uuid.NullUUID,
 	userUUID uuid.UUID,
-) ([]*Activity, Metadata, error) {
+) ([]*Action, Metadata, error) {
 	query := fmt.Sprintf(`
 		WITH filtered AS MATERIALIZED (
 			SELECT a.uuid, a.target_uuid
-			FROM activities a
-			JOIN activities_fts fts ON fts.activity_uuid = a.uuid
+			FROM actions a
+			JOIN actions_fts fts ON fts.action_uuid = a.uuid
 			JOIN targets t ON a.target_uuid = t.uuid
 			WHERE ($1 = '' OR fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1))
 				AND ($2 = '' OR fts.fts_english_tsv @@ plainto_tsquery('english', $2))
@@ -387,7 +387,7 @@ func (m ActivityModel) GetAll(
 					WHERE ac.user_uuid = $5
 					AND r.rank <= (SELECT rank FROM roles WHERE code = 'viewer')
 					AND (ac.resource_type, ac.resource_uuid) IN (
-						('activity', a.uuid),
+						('action', a.uuid),
 						('target', t.uuid)
 					)
 				)
@@ -417,15 +417,15 @@ func (m ActivityModel) GetAll(
 					ts_rank(fts.fts_english_tsv, plainto_tsquery('english', $2))
 				ELSE 0 END) AS rank
 			FROM filtered f
-			JOIN activities a ON f.uuid = a.uuid
-			JOIN activities_fts fts ON fts.activity_uuid = a.uuid
+			JOIN actions a ON f.uuid = a.uuid
+			JOIN actions_fts fts ON fts.action_uuid = a.uuid
 			JOIN targets t ON a.target_uuid = t.uuid
 			LEFT JOIN (
-				SELECT s.activity_uuid, COUNT(*) AS sessions_count
+				SELECT s.action_uuid, COUNT(*) AS sessions_count
 				FROM sessions s
-				JOIN filtered fl ON fl.uuid = s.activity_uuid
-				GROUP BY s.activity_uuid
-			) ss ON ss.activity_uuid = a.uuid
+				JOIN filtered fl ON fl.uuid = s.action_uuid
+				GROUP BY s.action_uuid
+			) ss ON ss.action_uuid = a.uuid
 			ORDER BY a.%s %s, rank DESC, a.serial_id DESC
 			LIMIT $6 OFFSET $7
 		)
@@ -454,7 +454,7 @@ func (m ActivityModel) GetAll(
 			JOIN roles r ON ac.role_code = r.code
 			WHERE ac.user_uuid = $5
 				AND (
-					(ac.resource_type = 'activity' AND ac.resource_uuid = p.uuid) OR
+					(ac.resource_type = 'action' AND ac.resource_uuid = p.uuid) OR
 					(ac.resource_type = 'target' AND ac.resource_uuid = p.target_uuid)
 				)
 			ORDER BY r.rank ASC
@@ -484,35 +484,35 @@ func (m ActivityModel) GetAll(
 	defer rows.Close()
 
 	totalRecords := 0
-	activities := []*Activity{}
+	actions := []*Action{}
 	for rows.Next() {
-		var activity Activity
+		var action Action
 		var ignored float64
 
 		err := rows.Scan(
 			&totalRecords,
-			&activity.UUID,
-			&activity.CreatedAt,
-			&activity.DueDate,
-			&activity.UpdatedAt,
-			&activity.LastActive,
-			&activity.Title,
-			&activity.Description,
-			&activity.Status,
-			&activity.Version,
-			&activity.SerialID,
-			&activity.TargetUUID,
-			&activity.TargetTitle,
-			&activity.SessionsCount,
-			&activity.HasNotes,
-			&activity.Role,
+			&action.UUID,
+			&action.CreatedAt,
+			&action.DueDate,
+			&action.UpdatedAt,
+			&action.LastActive,
+			&action.Title,
+			&action.Description,
+			&action.Status,
+			&action.Version,
+			&action.SerialID,
+			&action.TargetUUID,
+			&action.TargetTitle,
+			&action.SessionsCount,
+			&action.HasNotes,
+			&action.Role,
 			&ignored,
 		)
 		if err != nil {
 			return nil, Metadata{}, err
 		}
 
-		activities = append(activities, &activity)
+		actions = append(actions, &action)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -521,5 +521,5 @@ func (m ActivityModel) GetAll(
 
 	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
 
-	return activities, metadata, nil
+	return actions, metadata, nil
 }

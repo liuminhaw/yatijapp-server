@@ -233,7 +233,7 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (app *application) listTargetActivitiesHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) listTargetActionsHandler(w http.ResponseWriter, r *http.Request) {
 	targetUUID, err := app.readUUIDParam(r)
 	if err != nil {
 		app.notFoundResponse(w, r)
@@ -261,10 +261,10 @@ func (app *application) listTargetActivitiesHandler(w http.ResponseWriter, r *ht
 		return
 	}
 
-	t := tokenizer.New(input.Search, app.models.Activities.Jieba)
+	t := tokenizer.New(input.Search, app.models.Actions.Jieba)
 
 	user := app.contextGetUser(r)
-	activities, metadata, err := app.models.Activities.GetAll(
+	actions, metadata, err := app.models.Actions.GetAll(
 		*t,
 		input.Filters,
 		uuid.NullUUID{Valid: true, UUID: targetUUID},
@@ -278,7 +278,7 @@ func (app *application) listTargetActivitiesHandler(w http.ResponseWriter, r *ht
 	err = app.writeJSON(
 		w,
 		http.StatusOK,
-		envelope{"activities": activities, "metadata": metadata},
+		envelope{"actions": actions, "metadata": metadata},
 		nil,
 	)
 	if err != nil {

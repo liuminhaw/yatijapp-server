@@ -14,10 +14,10 @@ import (
 
 func (app *application) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		StartsAt     time.Time    `json:"starts_at"`
-		EndsAt       sql.NullTime `json:"ends_at"`
-		Notes        string       `json:"notes"`
-		ActivityUUID uuid.UUID    `json:"activity_uuid"`
+		StartsAt   time.Time    `json:"starts_at"`
+		EndsAt     sql.NullTime `json:"ends_at"`
+		Notes      string       `json:"notes"`
+		ActionUUID uuid.UUID    `json:"action_uuid"`
 	}
 
 	err := app.readJSON(w, r, &input)
@@ -27,10 +27,10 @@ func (app *application) createSessionHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	session := data.Session{
-		StartsAt:     input.StartsAt,
-		EndsAt:       input.EndsAt,
-		Notes:        input.Notes,
-		ActivityUUID: input.ActivityUUID,
+		StartsAt:   input.StartsAt,
+		EndsAt:     input.EndsAt,
+		Notes:      input.Notes,
+		ActionUUID: input.ActionUUID,
 	}
 
 	v := validator.New()
@@ -99,10 +99,10 @@ func (app *application) updateSessionHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	var input struct {
-		StartsAt     *time.Time    `json:"starts_at"`
-		EndsAt       *sql.NullTime `json:"ends_at"`
-		Notes        *string       `json:"notes"`
-		ActivityUUID *uuid.UUID    `json:"activity_uuid"`
+		StartsAt   *time.Time    `json:"starts_at"`
+		EndsAt     *sql.NullTime `json:"ends_at"`
+		Notes      *string       `json:"notes"`
+		ActionUUID *uuid.UUID    `json:"action_uuid"`
 	}
 	err = app.readJSON(w, r, &input)
 	if err != nil {
@@ -119,8 +119,8 @@ func (app *application) updateSessionHandler(w http.ResponseWriter, r *http.Requ
 	if input.Notes != nil {
 		session.Notes = *input.Notes
 	}
-	if input.ActivityUUID != nil {
-		session.ActivityUUID = *input.ActivityUUID
+	if input.ActionUUID != nil {
+		session.ActionUUID = *input.ActionUUID
 	}
 
 	v := validator.New()

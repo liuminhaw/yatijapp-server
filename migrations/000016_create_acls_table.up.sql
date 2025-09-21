@@ -22,19 +22,19 @@ CREATE INDEX "acls_targets_user_uuid_idx"
 CREATE INDEX "acls_targets_resource_uuid_idx" 
     ON "acls_targets" ("resource_uuid");
 
--- Partition for activities
-CREATE TABLE "acls_activities" PARTITION OF "acls"
-    FOR VALUES IN ('activity');
+-- Partition for actions
+CREATE TABLE "acls_actions" PARTITION OF "acls"
+    FOR VALUES IN ('action');
 
-ALTER TABLE "acls_activities"
-    ADD CONSTRAINT "acls_activities_uuid_fk" 
-    FOREIGN KEY ("resource_uuid") REFERENCES activities("uuid") ON DELETE CASCADE;
+ALTER TABLE "acls_actions"
+    ADD CONSTRAINT "acls_actions_uuid_fk" 
+    FOREIGN KEY ("resource_uuid") REFERENCES actions("uuid") ON DELETE CASCADE;
 
-CREATE INDEX "acls_activities_user_uuid_idx"
-    ON "acls_activities" ("user_uuid");
+CREATE INDEX "acls_actions_user_uuid_idx"
+    ON "acls_actions" ("user_uuid");
 
-CREATE INDEX "acls_activities_resource_uuid_idx"
-    ON "acls_activities" ("resource_uuid");
+CREATE INDEX "acls_actions_resource_uuid_idx"
+    ON "acls_actions" ("resource_uuid");
 
 -- Partition for sessions
 CREATE TABLE "acls_sessions" PARTITION OF "acls"
