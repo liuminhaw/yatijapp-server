@@ -217,7 +217,6 @@ func (app *application) listActionsHandler(w http.ResponseWriter, r *http.Reques
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "-last_active")
-
 	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
 
@@ -244,6 +243,60 @@ func (app *application) listActionsHandler(w http.ResponseWriter, r *http.Reques
 		w,
 		http.StatusOK,
 		envelope{"actions": actions, "metadata": metadata},
+		nil,
+	)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+}
+
+func (app *application) listActionSessionsHandler(w http.ResponseWriter, r *http.Request) {
+	actionUUID, err := app.readUUIDParam(r)
+	if err != nil {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	var input struct {
+		search  string
+		Filters data.Filters
+	}
+
+	v := validator.New()
+
+	qs := r.URL.Query()
+	input.search = app.readString(qs, "search", "")
+	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
+	input.Filters.Page = app.readInt(qs, "page", 1, v)
+	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
+	input.Filters.Sort = app.readString(qs, "sort", "-updated_at")
+	input.Filters.SortSafelist = data.SortSafelist
+	input.Filters.StatusSafelist = data.StatusFilterSafelist
+
+	if data.ValidateFilters(v, input.Filters); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	t := tokenizer.New(input.search, app.models.Sessions.Jieba)
+
+	user := app.contextGetUser(r)
+	sessions, metadata, err := app.models.Sessions.GetAll(
+		*t,
+		input.Filters,
+		uuid.NullUUID{Valid: true, UUID: actionUUID},
+		user.UUID,
+	)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(
+		w,
+		http.StatusOK,
+		envelope{"sessions": sessions, "metadata": metadata},
 		nil,
 	)
 	if err != nil {

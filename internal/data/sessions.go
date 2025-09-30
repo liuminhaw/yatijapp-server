@@ -18,7 +18,7 @@ type Session struct {
 	StartsAt    time.Time    `json:"starts_at"`
 	EndsAt      sql.NullTime `json:"ends_at"`
 	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"last_active"`
+	UpdatedAt   time.Time    `json:"updated_at"`
 	Notes       string       `json:"notes"`
 	Version     int32        `json:"version"`
 	ActionUUID  uuid.UUID    `json:"action_uuid"`
@@ -49,15 +49,15 @@ func (m SessionModel) Insert(session *Session, fts FTS, userUUID uuid.UUID) erro
 		WHERE code = 'editor'
 	),
 	new_session AS (
-		INSERT INTO sessions (action_uuid)
-		SELECT a.uuid
+		INSERT INTO sessions (action_uuid, notes)
+		SELECT a.uuid, $2
 		FROM actions a 
 		WHERE a.uuid = $1 AND EXISTS (
 			SELECT 1
 			FROM acls ac
 			JOIN roles r ON ac.role_code = r.code
 			JOIN cutoff c ON r.rank <= c.cutoff
-			WHERE ac.user_uuid = $2 AND (
+			WHERE ac.user_uuid = $3 AND (
 				(ac.resource_type = 'action' AND ac.resource_uuid = a.uuid)
 				OR
 				(ac.resource_type = 'target' AND ac.resource_uuid = a.target_uuid)
@@ -66,10 +66,10 @@ func (m SessionModel) Insert(session *Session, fts FTS, userUUID uuid.UUID) erro
 		RETURNING uuid, starts_at, created_at, updated_at, version
 	), grant_acl AS (
 		INSERT INTO acls (user_uuid, resource_type, resource_uuid, role_code)
-		SELECT $2, 'session', uuid, 'owner' FROM new_session
+		SELECT $3, 'session', uuid, 'owner' FROM new_session
 	), new_fts AS (
 		INSERT INTO sessions_fts (session_uuid, fts_chinese_notes_tsv, fts_english_notes_tsv)
-		SELECT uuid, to_tsvector('simple', $3), to_tsvector('english', $4)
+		SELECT uuid, to_tsvector('simple', $4), to_tsvector('english', $5)
 		FROM new_session
 	)
 	SELECT uuid, starts_at, created_at, updated_at, version FROM new_session;
@@ -78,7 +78,13 @@ func (m SessionModel) Insert(session *Session, fts FTS, userUUID uuid.UUID) erro
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	args := []any{session.ActionUUID, userUUID, fts.NotesToken.Chinese, fts.NotesToken.English}
+	args := []any{
+		session.ActionUUID,
+		session.Notes,
+		userUUID,
+		fts.NotesToken.Chinese,
+		fts.NotesToken.English,
+	}
 
 	err := m.DB.QueryRowContext(ctx, query, args...).
 		Scan(

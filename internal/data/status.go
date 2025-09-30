@@ -34,9 +34,11 @@ var SortSafelist = []string{
 	"created_at",
 	"due_date",
 	"last_active",
+	"updated_at",
 	"-serial_id",
 	"-title",
 	"-created_at",
 	"-due_date",
 	"-last_active",
+	"-updated_at",
 }

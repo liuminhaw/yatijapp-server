@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -51,6 +52,14 @@ func (app *application) createSessionHandler(w http.ResponseWriter, r *http.Requ
 			app.serverErrorResponse(w, r, err)
 		}
 		return
+	}
+
+	headers := make(http.Header)
+	headers.Set("Location", fmt.Sprintf("/v1/sessions/%s", session.UUID))
+
+	err = app.writeJSON(w, http.StatusCreated, envelope{"session": session}, headers)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
 	}
 }
 
@@ -102,7 +111,7 @@ func (app *application) updateSessionHandler(w http.ResponseWriter, r *http.Requ
 		StartsAt   *time.Time    `json:"starts_at"`
 		EndsAt     *sql.NullTime `json:"ends_at"`
 		Notes      *string       `json:"notes"`
-		ActionUUID *uuid.UUID    `json:"action_uuid"`
+		ActionUUID *uuid.UUID    `json:"action_uuid,omitzero"`
 	}
 	err = app.readJSON(w, r, &input)
 	if err != nil {
@@ -129,7 +138,7 @@ func (app *application) updateSessionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fts := data.GenFTS("", "", *input.Notes, app.models.Sessions.Jieba)
+	fts := data.GenFTS("", "", session.Notes, app.models.Sessions.Jieba)
 
 	err = app.models.Sessions.Update(session, fts, user.UUID)
 	if err != nil {
@@ -185,7 +194,7 @@ func (app *application) listSessionsHandler(w http.ResponseWriter, r *http.Reque
 	input.search = app.readString(qs, "search", "")
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
-	input.Filters.Sort = app.readString(qs, "sort", "starts_at")
+	input.Filters.Sort = app.readString(qs, "sort", "-starts_at")
 	// input.Filters.Status = data.StatusAny
 
 	input.Filters.SortSafelist = []string{

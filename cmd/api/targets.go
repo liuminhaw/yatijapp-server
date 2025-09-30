@@ -241,14 +241,14 @@ func (app *application) listTargetActionsHandler(w http.ResponseWriter, r *http.
 	}
 
 	var input struct {
-		Search  string
+		search  string
 		Filters data.Filters
 	}
 
 	v := validator.New()
 
 	qs := r.URL.Query()
-	input.Search = app.readString(r.URL.Query(), "search", "")
+	input.search = app.readString(r.URL.Query(), "search", "")
 	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
@@ -261,7 +261,7 @@ func (app *application) listTargetActionsHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	t := tokenizer.New(input.Search, app.models.Actions.Jieba)
+	t := tokenizer.New(input.search, app.models.Actions.Jieba)
 
 	user := app.contextGetUser(r)
 	actions, metadata, err := app.models.Actions.GetAll(

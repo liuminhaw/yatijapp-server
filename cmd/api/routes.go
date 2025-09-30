@@ -73,6 +73,11 @@ func (app *application) routes() http.Handler {
 		"/v1/actions/:uuid",
 		app.requireActivatedUser(app.deleteActionHandler),
 	)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/actions/:uuid/sessions",
+		app.requireActivatedUser(app.listActionSessionsHandler),
+	)
 
 	// Sessions routes
 	router.HandlerFunc(http.MethodGet, "/v1/sessions", app.listSessionsHandler)
