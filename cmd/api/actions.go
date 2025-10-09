@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/data"
@@ -43,19 +44,25 @@ func (app *application) createActionHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	fts := data.GenFTS(
-		action.Title,
-		action.Description,
-		action.Notes,
-		app.models.Actions.Jieba,
-	)
-
 	user := app.contextGetUser(r)
-	err = app.models.Actions.Insert(&action, fts, user.UUID)
+
+	quota := data.DailyQuota{
+		UsageDate: time.Now().UTC(),
+		Resource:  "action",
+		Limit:     app.config.user.dailyActionsCreationLimit,
+	}
+
+	err = app.models.CreateAction(&action, &quota, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
 			app.notFoundResponse(w, r)
+		case errors.Is(err, data.ErrQuotaExceeded):
+			msg := fmt.Sprintf(
+				"action creation quota reached (%d per day, renew on midnight UTC)",
+				quota.Limit,
+			)
+			app.quotaExceededResponse(w, r, msg)
 		default:
 			app.serverErrorResponse(w, r, err)
 		}

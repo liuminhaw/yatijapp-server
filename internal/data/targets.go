@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -30,6 +31,10 @@ type Target struct {
 	Role         string       `json:"role"` // The user's role for this target, e.g., "owner", "editor", "viewer"
 }
 
+func (t Target) IsRecordType() bool {
+	return true
+}
+
 func ValidateTarget(v *validator.Validator, target *Target) {
 	v.Check(target.Title != "", "title", "must be provided")
 	v.Check(len(target.Title) <= 200, "title", "must not be more than 200 characters long")
@@ -50,13 +55,13 @@ func ValidateTarget(v *validator.Validator, target *Target) {
 
 // TargetModel struct type wraps a sql.DB connection pool.
 type TargetModel struct {
-	DB    *sql.DB
-	Jieba *gojieba.Jieba
+	DB     DBTX
+	Jieba  *gojieba.Jieba
+	logger *slog.Logger
 }
 
-func (t TargetModel) Insert(target *Target, fts FTS, userUUID uuid.UUID) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func (t TargetModel) Insert(ctx context.Context, target *Target, userUUID uuid.UUID) error {
+	fts := GenFTS(target.Title, target.Description, target.Notes, t.Jieba)
 
 	query := `
 		WITH new_target AS (

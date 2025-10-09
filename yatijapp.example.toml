@@ -2,6 +2,7 @@
 # port = 8080
 # env = "development"
 # pepper = "random string for password hashing"
+# corsTrustedOrigins = []
 
 [server.limiter]
 # enabled = true
@@ -28,4 +29,10 @@
 # port = 25
 # username = ""
 # password = ""
+
+[user.quota]
+# dailyTargetsCreationLimit = 10
+# dailyActionsCreationLimit = 20
+# dailySessionsCreationLimit = 50
+
  

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/sessions-of-life/internal/data"
@@ -42,16 +43,24 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	fts := data.GenFTS(
-		target.Title,
-		target.Description,
-		target.Notes,
-		app.models.Targets.Jieba,
-	)
-
 	user := app.contextGetUser(r)
-	err = app.models.Targets.Insert(&target, fts, user.UUID)
+
+	quota := data.DailyQuota{
+		UsageDate: time.Now().UTC(),
+		Resource:  "target",
+		Limit:     app.config.user.dailyTargetsCreationLimit,
+	}
+
+	err = app.models.CreateTarget(&target, &quota, user.UUID)
 	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrQuotaExceeded):
+			msg := fmt.Sprintf(
+				"target creation quota reached (%d per day, renew on midnight UTC)",
+				quota.Limit,
+			)
+			app.quotaExceededResponse(w, r, msg)
+		}
 		app.serverErrorResponse(w, r, err)
 		return
 	}

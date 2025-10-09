@@ -37,11 +37,13 @@ func ValidateSession(v *validator.Validator, session *Session) {
 }
 
 type SessionModel struct {
-	DB    *sql.DB
+	DB    DBTX
 	Jieba *gojieba.Jieba
 }
 
-func (m SessionModel) Insert(session *Session, fts FTS, userUUID uuid.UUID) error {
+func (m SessionModel) Insert(ctx context.Context, session *Session, userUUID uuid.UUID) error {
+	fts := GenFTS("", "", session.Notes, m.Jieba)
+
 	query := `
 	WITH cutoff AS (
 		SELECT rank AS cutoff
@@ -74,9 +76,6 @@ func (m SessionModel) Insert(session *Session, fts FTS, userUUID uuid.UUID) erro
 	)
 	SELECT uuid, starts_at, created_at, updated_at, version FROM new_session;
 	`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 
 	args := []any{
 		session.ActionUUID,

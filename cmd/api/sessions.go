@@ -40,14 +40,25 @@ func (app *application) createSessionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fts := data.GenFTS("", "", input.Notes, app.models.Sessions.Jieba)
-
 	user := app.contextGetUser(r)
-	err = app.models.Sessions.Insert(&session, fts, user.UUID)
+
+	quota := data.DailyQuota{
+		UsageDate: time.Now().UTC(),
+		Resource:  "session",
+		Limit:     app.config.user.dailySessionsCreationLimit,
+	}
+
+	err = app.models.CreateSession(&session, &quota, user.UUID)
 	if err != nil {
 		switch {
 		case errors.Is(err, data.ErrRecordNotFound):
 			app.notFoundResponse(w, r)
+		case errors.Is(err, data.ErrQuotaExceeded):
+			msg := fmt.Sprintf(
+				"session creation quota reached (%d per day, renew on midnight UTC)",
+				quota.Limit,
+			)
+			app.quotaExceededResponse(w, r, msg)
 		default:
 			app.serverErrorResponse(w, r, err)
 		}

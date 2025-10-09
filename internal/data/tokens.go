@@ -55,7 +55,7 @@ func ValidateTokenPlaintext(v *validator.Validator, tokenPlaintext string) {
 }
 
 type TokenModel struct {
-	DB *sql.DB
+	DB DBTX
 }
 
 // New() method creates a new token and inserts it into the database tokens table.

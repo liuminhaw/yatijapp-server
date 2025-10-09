@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"expvar"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -45,6 +47,14 @@ type config struct {
 		username string
 		password string
 		sender   string
+	}
+	cors struct {
+		trustedOrigins []string
+	}
+	user struct {
+		dailyTargetsCreationLimit  int
+		dailyActionsCreationLimit  int
+		dailySessionsCreationLimit int
 	}
 }
 
@@ -100,6 +110,10 @@ func main() {
 	flag.Duration("ttl-password-reset-token", 10*time.Minute, "Password reset token lifetime")
 	flag.Duration("ttl-access-token", 1*time.Hour, "Access token lifetime")
 	flag.Duration("ttl-refresh-token", 24*time.Hour, "Refresh token lifetime")
+	flag.Int("daily-targets-creation-limit", 10, "Daily targets creation limit per user")
+	flag.Int("daily-actions-creation-limit", 20, "Daily actions creation limit per user")
+	flag.Int("daily-sessions-creation-limit", 50, "Daily sessions creation limit per user")
+	flag.StringSlice("cors-trusted-origins", []string{}, "Trusted CORS origins (comma separated)")
 	flag.Parse()
 
 	cfg, err := configSetup(vConf)
@@ -133,10 +147,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	expvar.NewString("version").Set(version)
+	// Publish the number of active goroutines
+	expvar.Publish("goroutines", expvar.Func(func() any {
+		return runtime.NumGoroutine()
+	}))
+	// Publish the database connection pool statistics
+	expvar.Publish("database", expvar.Func(func() any {
+		return db.Stats()
+	}))
+	expvar.Publish("timestamp", expvar.Func(func() any {
+		return time.Now().Unix()
+	}))
+
 	app := application{
 		config: cfg,
 		logger: logger,
-		models: data.NewModels(db, jieba),
+		models: data.NewModels(db, jieba, logger),
 		mailer: mailer,
 	}
 
@@ -177,6 +204,7 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.SetDefault("server.port", 8080)
 	conf.SetDefault("server.env", "development")
 	conf.SetDefault("server.pepper", "")
+	conf.SetDefault("server.corsTrustedOrigins", []string{})
 	conf.SetDefault("server.limiter.rps", 2.0)
 	conf.SetDefault("server.limiter.burst", 4)
 	conf.SetDefault("server.limiter.enabled", true)
@@ -190,6 +218,9 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.SetDefault("smtp.host", "sandbox.smtp.mailtrap.io")
 	conf.SetDefault("smtp.port", 25)
 	conf.SetDefault("smtp.sender", "Yatijapp <no-reply>@yatijapp.fakemail.com")
+	conf.SetDefault("user.dailyTargetsCreationLimit", 10)
+	conf.SetDefault("user.dailyActionsCreationLimit", 20)
+	conf.SetDefault("user.dailySessionsCreationLimit", 50)
 
 	conf.SetConfigName("yatijapp.toml")
 	conf.SetConfigType("toml")
@@ -202,6 +233,7 @@ func configSetup(conf *viper.Viper) (config, error) {
 
 	conf.BindPFlag("server.port", flag.Lookup("port"))
 	conf.BindPFlag("server.env", flag.Lookup("env"))
+	conf.BindPFlag("server.corsTrustedOrigins", flag.Lookup("cors-trusted-origins"))
 	conf.BindPFlag("server.limiter.rps", flag.Lookup("limiter-rps"))
 	conf.BindPFlag("server.limiter.burst", flag.Lookup("limiter-burst"))
 	conf.BindPFlag("server.limiter.enabled", flag.Lookup("limiter-enabled"))
@@ -218,6 +250,9 @@ func configSetup(conf *viper.Viper) (config, error) {
 	conf.BindPFlag("mailer.smtp.port", flag.Lookup("smtp-port"))
 	conf.BindPFlag("mailer.smtp.username", flag.Lookup("smtp-username"))
 	conf.BindPFlag("mailer.smtp.password", flag.Lookup("smtp-password"))
+	conf.BindPFlag("user.dailyTargetsCreationLimit", flag.Lookup("daily-targets-creation-limit"))
+	conf.BindPFlag("user.dailyActionsCreationLimit", flag.Lookup("daily-actions-creation-limit"))
+	conf.BindPFlag("user.dailySessionsCreationLimit", flag.Lookup("daily-sessions-creation-limit"))
 
 	return config{
 		port:   conf.GetInt("server.port"),
@@ -266,6 +301,20 @@ func configSetup(conf *viper.Viper) (config, error) {
 			username: conf.GetString("mailer.smtp.username"),
 			password: conf.GetString("mailer.smtp.password"),
 			sender:   conf.GetString("mailer.sender"),
+		},
+		cors: struct {
+			trustedOrigins []string
+		}{
+			trustedOrigins: conf.GetStringSlice("server.corsTrustedOrigins"),
+		},
+		user: struct {
+			dailyTargetsCreationLimit  int
+			dailyActionsCreationLimit  int
+			dailySessionsCreationLimit int
+		}{
+			dailyTargetsCreationLimit:  conf.GetInt("user.dailyTargetsCreationLimit"),
+			dailyActionsCreationLimit:  conf.GetInt("user.dailyActionsCreationLimit"),
+			dailySessionsCreationLimit: conf.GetInt("user.dailySessionsCreationLimit"),
 		},
 	}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -53,11 +54,14 @@ func ValidateAction(v *validator.Validator, action *Action) {
 
 // ActionModel struct type wraps a sql.DB connection pool and a Jieba instance.
 type ActionModel struct {
-	DB    *sql.DB
-	Jieba *gojieba.Jieba
+	DB     DBTX
+	Jieba  *gojieba.Jieba
+	logger *slog.Logger
 }
 
-func (m ActionModel) Insert(action *Action, fts FTS, userUUID uuid.UUID) error {
+func (m ActionModel) Insert(ctx context.Context, action *Action, userUUID uuid.UUID) error {
+	fts := GenFTS(action.Title, action.Description, action.Notes, m.Jieba)
+
 	query := `
 	WITH new_action AS (
 		INSERT INTO actions (target_uuid, title, description, notes, due_date, status)
@@ -97,9 +101,6 @@ func (m ActionModel) Insert(action *Action, fts FTS, userUUID uuid.UUID) error {
 	`
 	// Consider adding index on acls_targets
 	// CREATE INDEX ON acls_target (resource_uuid, user_uuid, role_code);
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 
 	args := []any{
 		action.TargetUUID,
