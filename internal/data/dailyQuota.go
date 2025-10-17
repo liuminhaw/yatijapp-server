@@ -2,7 +2,6 @@ package data
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -16,8 +15,7 @@ type DailyQuota struct {
 }
 
 type DailyQuotaModel struct {
-	DB     DBTX
-	logger *slog.Logger
+	DB DBTX
 }
 
 func (m DailyQuotaModel) Insert(quota *DailyQuota, userUUID uuid.UUID) error {

@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/liuminhaw/sessions-of-life/internal/data"
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/data"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 )
 
 func (app *application) showCurrentUserHandler(w http.ResponseWriter, r *http.Request) {

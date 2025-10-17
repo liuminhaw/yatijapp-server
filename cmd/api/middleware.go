@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liuminhaw/sessions-of-life/internal/data"
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/data"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 	"github.com/tomasen/realip"
 	"golang.org/x/time/rate"
 )

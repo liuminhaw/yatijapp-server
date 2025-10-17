@@ -1,5 +1,13 @@
 # Sessions of Life
 
+## Tools
+- `yq`: Makefile parsing toml config
+- `migrate`: Database migration tool
+- `staticcheck`: Go static analysis tool
+    ```
+    go get -tool honnef.co/go/tools/cmd/staticcheck@latest
+    ```
+
 ## APIs
 
 ### Application

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 )
 
 type Filters struct {

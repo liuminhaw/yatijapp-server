@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/text/unicode/norm"
 )

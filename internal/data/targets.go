@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/liuminhaw/sessions-of-life/internal/tokenizer"
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/tokenizer"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 	"github.com/yanyiwu/gojieba"
 )
 

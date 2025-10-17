@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/liuminhaw/sessions-of-life/internal/validator"
+	"github.com/liuminhaw/yatijapp/internal/validator"
 )
 
 const (

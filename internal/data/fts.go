@@ -1,7 +1,7 @@
 package data
 
 import (
-	"github.com/liuminhaw/sessions-of-life/internal/tokenizer"
+	"github.com/liuminhaw/yatijapp/internal/tokenizer"
 	"github.com/yanyiwu/gojieba"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/liuminhaw/sessions-of-life/internal/data"
+	"github.com/liuminhaw/yatijapp/internal/data"
 )
 
 type contextKey string

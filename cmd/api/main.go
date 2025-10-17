@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"expvar"
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
@@ -11,14 +12,15 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/liuminhaw/sessions-of-life/internal/data"
-	"github.com/liuminhaw/sessions-of-life/internal/mailer"
+	"github.com/liuminhaw/yatijapp/internal/data"
+	"github.com/liuminhaw/yatijapp/internal/mailer"
+	"github.com/liuminhaw/yatijapp/internal/vcs"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"github.com/yanyiwu/gojieba"
 )
 
-const version = "1.0.0"
+var version = vcs.Version()
 
 type config struct {
 	port   int
@@ -114,7 +116,14 @@ func main() {
 	flag.Int("daily-actions-creation-limit", 20, "Daily actions creation limit per user")
 	flag.Int("daily-sessions-creation-limit", 50, "Daily sessions creation limit per user")
 	flag.StringSlice("cors-trusted-origins", []string{}, "Trusted CORS origins (comma separated)")
+
+	displayVersion := flag.Bool("version", false, "Display version and exit")
 	flag.Parse()
+
+	if *displayVersion {
+		fmt.Printf("Version:\t%s\n", version)
+		os.Exit(0)
+	}
 
 	cfg, err := configSetup(vConf)
 	if err != nil {
