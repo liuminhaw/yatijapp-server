@@ -15,6 +15,7 @@ import (
 	"github.com/liuminhaw/yatijapp/internal/data"
 	"github.com/liuminhaw/yatijapp/internal/mailer"
 	"github.com/liuminhaw/yatijapp/internal/platform"
+	"github.com/liuminhaw/yatijapp/internal/tokenizer"
 	"github.com/liuminhaw/yatijapp/internal/vcs"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -145,8 +146,14 @@ func main() {
 	logger.Info("database connection pool established")
 
 	// Initialize the Jieba text segmentation library for Chinese text processing
-	jieba := gojieba.NewJieba()
+	dictFiles, cleanup, err := tokenizer.WriteJiebaDictFiles()
+	if err != nil {
+		logger.Error("Error creating Jieba dictionary files", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	jieba := gojieba.NewJieba(dictFiles...)
 	defer jieba.Free()
+	defer cleanup()
 
 	// Initialize a new Mailer instance for sending emails
 	mailer, err := mailer.New(

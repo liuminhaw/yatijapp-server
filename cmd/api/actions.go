@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -32,14 +33,14 @@ func (app *application) createActionHandler(w http.ResponseWriter, r *http.Reque
 	action := data.Action{
 		TargetUUID:  input.TargetUUID,
 		DueDate:     sql.NullTime(input.DueDate),
-		Title:       input.Title,
-		Description: input.Description,
+		Title:       strings.TrimSpace(input.Title),
+		Description: strings.TrimSpace(input.Description),
 		Notes:       input.Notes,
 		Status:      input.Status,
 	}
 
 	v := validator.New()
-	if data.ValidateAction(v, &action); !v.Valid() {
+	if data.ValidateAction(v, &action, "create"); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -137,10 +138,10 @@ func (app *application) updateActionHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	if input.Title != nil {
-		action.Title = *input.Title
+		action.Title = strings.TrimSpace(*input.Title)
 	}
 	if input.Description != nil {
-		action.Description = *input.Description
+		action.Description = strings.TrimSpace(*input.Description)
 	}
 	if input.Notes != nil {
 		action.Notes = *input.Notes
@@ -156,7 +157,7 @@ func (app *application) updateActionHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	v := validator.New()
-	if data.ValidateAction(v, action); !v.Valid() {
+	if data.ValidateAction(v, action, "update"); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}

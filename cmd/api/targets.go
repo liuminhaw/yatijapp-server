@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -30,15 +31,15 @@ func (app *application) createTargetHandler(w http.ResponseWriter, r *http.Reque
 
 	target := data.Target{
 		DueDate:     sql.NullTime(input.DueDate),
-		Title:       input.Title,
-		Description: input.Description,
+		Title:       strings.TrimSpace(input.Title),
+		Description: strings.TrimSpace(input.Description),
 		Notes:       input.Notes,
 		Status:      input.Status,
 	}
 
 	// Input validation
 	v := validator.New()
-	if data.ValidateTarget(v, &target); !v.Valid() {
+	if data.ValidateTarget(v, &target, "create"); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
@@ -132,10 +133,10 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	if input.Title != nil {
-		target.Title = *input.Title
+		target.Title = strings.TrimSpace(*input.Title)
 	}
 	if input.Description != nil {
-		target.Description = *input.Description
+		target.Description = strings.TrimSpace(*input.Description)
 	}
 	if input.Notes != nil {
 		target.Notes = *input.Notes
@@ -148,7 +149,7 @@ func (app *application) updateTargetHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	v := validator.New()
-	if data.ValidateTarget(v, target); !v.Valid() {
+	if data.ValidateTarget(v, target, "update"); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}

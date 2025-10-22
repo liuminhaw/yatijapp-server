@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/yatijapp/internal/tokenizer"
@@ -35,16 +36,25 @@ func (t Target) IsRecordType() bool {
 	return true
 }
 
-func ValidateTarget(v *validator.Validator, target *Target) {
+func ValidateTarget(v *validator.Validator, target *Target, on string) {
 	v.Check(target.Title != "", "title", "must be provided")
-	v.Check(len(target.Title) <= 200, "title", "must not be more than 200 characters long")
+	v.Check(
+		utf8.RuneCountInString(target.Title) <= 80,
+		"title",
+		"must not be more than 80 characters long",
+	)
+	v.Check(
+		utf8.RuneCountInString(target.Description) <= 200,
+		"description",
+		"must not be more than 200 characters long",
+	)
 	v.Check(target.Status != "", "status", "must be provided")
 	v.Check(
 		validator.PermittedValue(target.Status, StatusSafelist...),
 		"status",
 		"must be one of 'queued', 'in progress', 'complete', 'canceled', or 'archived'",
 	)
-	if target.DueDate.Valid {
+	if on == "create" && target.DueDate.Valid {
 		v.Check(
 			target.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
 			"due_date",

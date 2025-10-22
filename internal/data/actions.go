@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/liuminhaw/yatijapp/internal/tokenizer"
@@ -33,17 +34,26 @@ type Action struct {
 	Role          string       `json:"role"` // The user's role for this action, e.g., "owner", "editor", "viewer"
 }
 
-func ValidateAction(v *validator.Validator, action *Action) {
+func ValidateAction(v *validator.Validator, action *Action, on string) {
 	v.Check(action.TargetUUID != uuid.Nil, "target_uuid", "must be provided")
 	v.Check(action.Title != "", "title", "must be provided")
-	v.Check(len(action.Title) <= 200, "title", "must not be more than 200 characters long")
+	v.Check(
+		utf8.RuneCountInString(action.Title) <= 80,
+		"title",
+		"must not be more than 80 characters long",
+	)
+	v.Check(
+		utf8.RuneCountInString(action.Description) <= 200,
+		"description",
+		"must not be more than 200 characters long",
+	)
 	v.Check(action.Status != "", "status", "must be provided")
 	v.Check(
 		validator.PermittedValue(action.Status, StatusSafelist...),
 		"status",
 		"must be one of 'queued', 'in progress', 'complete', 'canceled', or 'archived'",
 	)
-	if action.DueDate.Valid {
+	if on == "create" && action.DueDate.Valid {
 		v.Check(
 			action.DueDate.Time.After(time.Now().AddDate(0, 0, -1)),
 			"due_date",
