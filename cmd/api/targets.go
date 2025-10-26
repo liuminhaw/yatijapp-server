@@ -212,9 +212,10 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	v := validator.New()
 
 	qs := r.URL.Query()
+	statuses := app.readCSV(qs, "status", []string{})
 
 	input.Search = app.readString(qs, "search", "")
-	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
+	input.Filters.Status = data.StringSliceToStatusSlice(statuses)
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "-last_active")
@@ -258,8 +259,10 @@ func (app *application) listTargetActionsHandler(w http.ResponseWriter, r *http.
 	v := validator.New()
 
 	qs := r.URL.Query()
+	statuses := app.readCSV(qs, "status", []string{})
+
 	input.search = app.readString(r.URL.Query(), "search", "")
-	input.Filters.Status = data.Status(app.readString(qs, "status", ""))
+	input.Filters.Status = data.StringSliceToStatusSlice(statuses)
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "-last_active")

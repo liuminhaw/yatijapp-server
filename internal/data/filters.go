@@ -12,7 +12,7 @@ type Filters struct {
 	PageSize       int
 	Sort           string
 	SortSafelist   []string
-	Status         Status
+	Status         []Status
 	StatusSafelist []Status
 }
 
@@ -46,11 +46,13 @@ func ValidateFilters(v *validator.Validator, f Filters) {
 	v.Check(f.PageSize <= 100, "page_size", "must be a maximum of 100")
 
 	v.Check(validator.PermittedValue(f.Sort, f.SortSafelist...), "sort", "invalid sort value")
-	v.Check(
-		validator.PermittedValue(f.Status, f.StatusSafelist...),
-		"status",
-		"invalid status value",
-	)
+	for _, status := range f.Status {
+		v.Check(
+			validator.PermittedValue(status, f.StatusSafelist...),
+			"status",
+			"invalid status value",
+		)
+	}
 }
 
 // Metadata struct holds pagination information

@@ -42,3 +42,11 @@ var SortSafelist = []string{
 	"-last_active",
 	"-updated_at",
 }
+
+func StringSliceToStatusSlice(input []string) []Status {
+	statuses := make([]Status, len(input))
+	for i, s := range input {
+		statuses[i] = Status(s)
+	}
+	return statuses
+}

@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/lib/pq"
 	"github.com/liuminhaw/yatijapp/internal/tokenizer"
 	"github.com/liuminhaw/yatijapp/internal/validator"
 	"github.com/yanyiwu/gojieba"
@@ -389,7 +390,7 @@ func (m ActionModel) GetAll(
 			JOIN targets t ON a.target_uuid = t.uuid
 			WHERE ($1 = '' OR fts.fts_chinese_tsv @@ plainto_tsquery('simple', $1))
 				AND ($2 = '' OR fts.fts_english_tsv @@ plainto_tsquery('english', $2))
-				AND (CASE WHEN $3 = '' THEN TRUE ELSE a.status = $3::statuses END)
+				AND ($3 = '{}' OR a.status = ANY ($3::statuses[]))
 				AND ($4::uuid IS NULL OR a.target_uuid = $4::uuid)
 				AND EXISTS (
 					SELECT 1
@@ -481,7 +482,7 @@ func (m ActionModel) GetAll(
 	args := []any{
 		token.Chinese,
 		token.English,
-		filters.Status,
+		pq.Array(filters.Status),
 		targetUUID,
 		userUUID,
 		filters.limit(),

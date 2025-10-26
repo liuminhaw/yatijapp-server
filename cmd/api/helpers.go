@@ -147,14 +147,14 @@ func (app *application) readInt(
 
 // readCSV() reads a string value from the query string, splits if into a slice using
 // comma character. If no matching key is found, it returns the provided default value.
-// func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
-// 	csv := qs.Get(key)
-// 	if csv == "" {
-// 		return defaultValue
-// 	}
-//
-// 	return strings.Split(csv, ",")
-// }
+func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
+	csv := qs.Get(key)
+	if csv == "" {
+		return defaultValue
+	}
+
+	return strings.Split(csv, ",")
+}
 
 // background() runs the provided function in a separate goroutine, allowing it to
 // execute concurrently with the main application. It also recovers from any panic
