@@ -15,11 +15,14 @@
 # accessTokenTTL = "1h"
 # refreshTokenTTL = "24h"
 
+[server.cleanup]
+# interval = "1h"
+
 [database]
 # dsn = "postgres://username:password@host:port/db?sslmode=disable"
 # maxOpenConns = 25
 # maxIdleConns = 25
-# maxIdleTime = 15m
+# maxIdleTime = "15m"
 
 [mailer]
 # sender = "Yatijapp <no-reply@yatijapp.fakemail.com>"

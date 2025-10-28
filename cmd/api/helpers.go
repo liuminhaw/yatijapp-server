@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/julienschmidt/httprouter"
@@ -177,4 +179,26 @@ func (app *application) background(fn func()) {
 		// Execute the provided function
 		fn()
 	}()
+}
+
+func (app *application) startCleanupRoutine() {
+	app.logger.Info("Cleanup routine started")
+
+	ticker := time.NewTicker(app.config.cleanup.interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		app.logger.Info("Cleanup routine triggered")
+		app.background(func() {
+			rows, err := app.models.Tokens.DeleteAllExpired()
+			if err != nil {
+				app.logger.Error("Error during cleanup: " + err.Error())
+			} else {
+				app.logger.Info(
+					"Expired tokens cleaned up successfully",
+					slog.Int64("rows affected", rows),
+				)
+			}
+		})
+	}
 }

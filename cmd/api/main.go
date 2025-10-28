@@ -76,6 +76,7 @@ func main() {
 	flag.Duration("ttl-password-reset-token", 10*time.Minute, "Password reset token lifetime")
 	flag.Duration("ttl-access-token", 1*time.Hour, "Access token lifetime")
 	flag.Duration("ttl-refresh-token", 24*time.Hour, "Refresh token lifetime")
+	flag.Duration("cleanup-interval", 1*time.Hour, "Background cleanup interval")
 	flag.Int("daily-targets-creation-limit", 10, "Daily targets creation limit per user")
 	flag.Int("daily-actions-creation-limit", 20, "Daily actions creation limit per user")
 	flag.Int("daily-sessions-creation-limit", 50, "Daily sessions creation limit per user")
@@ -187,6 +188,9 @@ func main() {
 		models: data.NewModels(db, jieba, logger),
 		mailer: mailer,
 	}
+
+	// Running cleanup routine in background
+	go app.startCleanupRoutine()
 
 	err = app.serve()
 	if err != nil {

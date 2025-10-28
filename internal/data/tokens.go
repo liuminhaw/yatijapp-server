@@ -156,3 +156,20 @@ func (m TokenModel) DeleteAllForUserSession(userUUID, sessionUUID uuid.UUID) err
 	_, err := m.DB.ExecContext(ctx, query, userUUID, sessionUUID)
 	return err
 }
+
+// DeleteAllExpired() deletes all expired tokens from the database.
+func (m TokenModel) DeleteAllExpired() (int64, error) {
+	query := `
+		DELETE FROM tokens
+		WHERE expiry < NOW()`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	res, err := m.DB.ExecContext(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}

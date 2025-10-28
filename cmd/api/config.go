@@ -39,6 +39,9 @@ type config struct {
 		password string
 		sender   string
 	}
+	cleanup struct {
+		interval time.Duration
+	}
 	cors struct {
 		trustedOrigins []string
 	}
@@ -61,6 +64,7 @@ func configSetup(conf *viper.Viper, config_file string) (config, error) {
 	conf.SetDefault("server.tokens.passwordResetTokenTTL", 10*time.Minute)
 	conf.SetDefault("server.tokens.accessTokenTTL", 1*time.Hour)
 	conf.SetDefault("server.tokens.refreshTokenTTL", 24*time.Hour)
+	conf.SetDefault("server.cleanup.interval", 1*time.Hour)
 	conf.SetDefault("database.maxOpenConns", 25)
 	conf.SetDefault("database.maxIdleConns", 25)
 	conf.SetDefault("database.maxIdleTimeInMinutes", 15)
@@ -95,6 +99,7 @@ func configSetup(conf *viper.Viper, config_file string) (config, error) {
 	conf.BindPFlag("server.tokens.passwordResetTokenTTL", flag.Lookup("ttl-password-reset-token"))
 	conf.BindPFlag("server.tokens.accessTokenTTL", flag.Lookup("ttl-access-token"))
 	conf.BindPFlag("server.tokens.refreshTokenTTL", flag.Lookup("ttl-refresh-token"))
+	conf.BindPFlag("server.cleanup.interval", flag.Lookup("cleanup-interval"))
 	conf.BindPFlag("database.dsn", flag.Lookup("db-dsn"))
 	conf.BindPFlag("database.maxOpenConns", flag.Lookup("db-max-open-conns"))
 	conf.BindPFlag("database.maxIdleConns", flag.Lookup("db-max-idle-conns"))
@@ -155,6 +160,11 @@ func configSetup(conf *viper.Viper, config_file string) (config, error) {
 			username: conf.GetString("mailer.smtp.username"),
 			password: conf.GetString("mailer.smtp.password"),
 			sender:   conf.GetString("mailer.sender"),
+		},
+		cleanup: struct {
+			interval time.Duration
+		}{
+			interval: conf.GetDuration("server.cleanup.interval"),
 		},
 		cors: struct {
 			trustedOrigins []string
