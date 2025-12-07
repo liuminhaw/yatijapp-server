@@ -202,23 +202,28 @@ func (app *application) listSessionsHandler(w http.ResponseWriter, r *http.Reque
 	v := validator.New()
 
 	qs := r.URL.Query()
+	statuses := app.readCSV(qs, "status", []string{})
+
 	input.search = app.readString(qs, "search", "")
+	input.Filters.Status = data.StringSliceToStatusSlice(statuses)
 	input.Filters.Page = app.readInt(qs, "page", 1, v)
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "-starts_at")
-	// input.Filters.Status = data.StatusAny
 
 	input.Filters.SortSafelist = []string{
 		"starts_at",
 		"ends_at",
 		"created_at",
-		"last_active",
+		"updated_at",
 		"-starts_at",
 		"-ends_at",
 		"-created_at",
-		"-last_active",
+		"-updated_at",
 	}
-	input.Filters.StatusSafelist = data.StatusFilterSafelist
+	input.Filters.StatusSafelist = []data.Status{
+		data.StatusInProgress,
+		data.StatusComplete,
+	}
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)

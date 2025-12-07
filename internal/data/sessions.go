@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gofrs/uuid/v5"
@@ -337,6 +338,7 @@ func (m SessionModel) GetAll(
 			WHERE ($1 = '' OR fts.fts_chinese_notes_tsv @@ plainto_tsquery('simple', $1))
 				AND ($2 = '' OR fts.fts_english_notes_tsv @@ plainto_tsquery('english', $2))
 				AND ($3::uuid IS NULL OR s.action_uuid = $3)
+				AND (($7 = FALSE AND $8 = FALSE) OR ($7 AND s.ends_at IS NULL) OR ($8 AND s.ends_at IS NOT NULL))
 				AND EXISTS (
 					SELECT 1
 					FROM acls ac
@@ -415,6 +417,9 @@ func (m SessionModel) GetAll(
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	wantInProgress := slices.Contains(filters.Status, StatusInProgress)
+	wantCompleted := slices.Contains(filters.Status, StatusComplete)
+
 	args := []any{
 		token.Chinese,
 		token.English,
@@ -422,6 +427,8 @@ func (m SessionModel) GetAll(
 		userUUID,
 		filters.limit(),
 		filters.offset(),
+		wantInProgress,
+		wantCompleted,
 	}
 
 	rows, err := m.DB.QueryContext(ctx, query, args...)
