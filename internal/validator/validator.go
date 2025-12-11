@@ -45,6 +45,16 @@ func PermittedValue[T comparable](value T, permittedValues ...T) bool {
 	return slices.Contains(permittedValues, value)
 }
 
+func PermittedValues[T comparable](values []T, permittedValues ...T) bool {
+	for _, value := range values {
+		if !PermittedValue(value, permittedValues...) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Matches returns true if the value matches the regular expression.
 func Matches(value string, rx *regexp.Regexp) bool {
 	return rx.MatchString(value)

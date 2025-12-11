@@ -81,11 +81,31 @@ func (app *application) routes() http.Handler {
 	)
 
 	// Sessions routes
-	router.HandlerFunc(http.MethodGet, "/v1/sessions", app.listSessionsHandler)
-	router.HandlerFunc(http.MethodPost, "/v1/sessions", app.createSessionHandler)
-	router.HandlerFunc(http.MethodGet, "/v1/sessions/:uuid", app.showSessionHandler)
-	router.HandlerFunc(http.MethodPatch, "/v1/sessions/:uuid", app.updateSessionHandler)
-	router.HandlerFunc(http.MethodDelete, "/v1/sessions/:uuid", app.deleteSessionHandler)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/sessions",
+		app.requireActivatedUser(app.listSessionsHandler),
+	)
+	router.HandlerFunc(
+		http.MethodPost,
+		"/v1/sessions",
+		app.requireActivatedUser(app.createSessionHandler),
+	)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/sessions/:uuid",
+		app.requireActivatedUser(app.showSessionHandler),
+	)
+	router.HandlerFunc(
+		http.MethodPatch,
+		"/v1/sessions/:uuid",
+		app.requireActivatedUser(app.updateSessionHandler),
+	)
+	router.HandlerFunc(
+		http.MethodDelete,
+		"/v1/sessions/:uuid",
+		app.requireActivatedUser(app.deleteSessionHandler),
+	)
 
 	// Users routes
 	router.HandlerFunc(
@@ -93,6 +113,17 @@ func (app *application) routes() http.Handler {
 		"/v1/users/me",
 		app.requireActivatedUser(app.showCurrentUserHandler),
 	)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/users/preferences",
+		app.requireActivatedUser(app.showUserPreferencesHandler),
+	)
+	router.HandlerFunc(
+		http.MethodPut,
+		"/v1/users/preferences",
+		app.requireActivatedUser(app.updateUserPreferencesHandler),
+	)
+
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.registerUserHandler)
 	// Activate a user account
 	router.HandlerFunc(http.MethodPut, "/v1/users/activated", app.activateUserHandler)

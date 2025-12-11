@@ -210,20 +210,8 @@ func (app *application) listSessionsHandler(w http.ResponseWriter, r *http.Reque
 	input.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
 	input.Filters.Sort = app.readString(qs, "sort", "-starts_at")
 
-	input.Filters.SortSafelist = []string{
-		"starts_at",
-		"ends_at",
-		"created_at",
-		"updated_at",
-		"-starts_at",
-		"-ends_at",
-		"-created_at",
-		"-updated_at",
-	}
-	input.Filters.StatusSafelist = []data.Status{
-		data.StatusInProgress,
-		data.StatusComplete,
-	}
+	input.Filters.SortSafelist = data.SessionSortSafelist
+	input.Filters.StatusSafelist = data.SessionStatusSafelist
 
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)

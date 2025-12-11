@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -200,6 +201,64 @@ func (app *application) updateUserPasswordHandler(w http.ResponseWriter, r *http
 
 	env := envelope{"message": "your password was successfully updated"}
 	err = app.writeJSON(w, http.StatusOK, env, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) showUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+	preferences, err := app.models.UserPreferences.Get(user.UUID)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"preferences": preferences}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func (app *application) updateUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+
+	var input data.Preferences
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	v := validator.New()
+	if data.ValidatePreferences(v, &input); !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.models.UserPreferences.Put(user.UUID, inputBytes)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"preferences": input}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}

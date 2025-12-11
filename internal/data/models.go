@@ -77,25 +77,27 @@ func (m Models) WithTxRetry(
 }
 
 type Models struct {
-	Targets    TargetModel
-	Actions    ActionModel
-	Sessions   SessionModel
-	Tokens     TokenModel
-	Users      UserModel
-	DailyQuota DailyQuotaModel
-	db         *sql.DB
-	logger     *slog.Logger
+	Targets         TargetModel
+	Actions         ActionModel
+	Sessions        SessionModel
+	Tokens          TokenModel
+	Users           UserModel
+	UserPreferences UserPreferencesModel
+	DailyQuota      DailyQuotaModel
+	db              *sql.DB
+	logger          *slog.Logger
 }
 
 // NewModels returns a Models struct containing the initialized TargetModel.
 func NewModels(db *sql.DB, jieba *gojieba.Jieba, logger *slog.Logger) Models {
 	return Models{
-		Targets:    TargetModel{DB: db, Jieba: jieba, logger: logger},
-		Actions:    ActionModel{DB: db, Jieba: jieba, logger: logger},
-		Sessions:   SessionModel{DB: db, Jieba: jieba},
-		Tokens:     TokenModel{DB: db},
-		Users:      UserModel{DB: db},
-		DailyQuota: DailyQuotaModel{DB: db},
+		Targets:         TargetModel{DB: db, Jieba: jieba, logger: logger},
+		Actions:         ActionModel{DB: db, Jieba: jieba, logger: logger},
+		Sessions:        SessionModel{DB: db, Jieba: jieba},
+		Tokens:          TokenModel{DB: db},
+		Users:           UserModel{DB: db},
+		UserPreferences: UserPreferencesModel{DB: db},
+		DailyQuota:      DailyQuotaModel{DB: db},
 
 		db:     db,
 		logger: logger,

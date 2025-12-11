@@ -19,6 +19,11 @@ var StatusSafelist = []Status{
 	StatusArchived,
 }
 
+var SessionStatusSafelist = []Status{
+	StatusInProgress,
+	StatusComplete,
+}
+
 var StatusFilterSafelist = []Status{
 	StatusQueued,
 	StatusInProgress,
@@ -41,6 +46,22 @@ var SortSafelist = []string{
 	"-due_date",
 	"-last_active",
 	"-updated_at",
+}
+
+var SessionSortSafelist = []string{
+	"starts_at",
+	"ends_at",
+	"created_at",
+	"updated_at",
+	"-starts_at",
+	"-ends_at",
+	"-created_at",
+	"-updated_at",
+}
+
+var SortOrderSafelist = []string{
+	"ascending",
+	"descending",
 }
 
 func StringSliceToStatusSlice(input []string) []Status {
