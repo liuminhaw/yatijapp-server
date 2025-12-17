@@ -213,6 +213,7 @@ func (app *application) listSessionsHandler(w http.ResponseWriter, r *http.Reque
 	input.Filters.SortSafelist = data.SessionSortSafelist
 	input.Filters.StatusSafelist = data.SessionStatusSafelist
 
+	// app.logger.Info(fmt.Sprintf("Listing sessions with filters: %+v", input.Filters))
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return

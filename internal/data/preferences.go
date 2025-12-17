@@ -12,9 +12,8 @@ import (
 )
 
 type filter struct {
-	SortBy    string   `json:"sortBy"`
-	SortOrder string   `json:"sortOrder"`
-	Status    []Status `json:"status"`
+	SortBy string   `json:"sortBy"`
+	Status []Status `json:"status"`
 }
 
 type filters struct {
@@ -45,22 +44,6 @@ func ValidatePreferences(v *validator.Validator, p *Preferences) {
 	v.Check(
 		validator.PermittedValue(p.Filters.Session.SortBy, SessionSortSafelist...),
 		"filters.session.sortBy",
-		"not a permitted value",
-	)
-	// SortOrder
-	v.Check(
-		validator.PermittedValue(p.Filters.Target.SortOrder, SortOrderSafelist...),
-		"filters.target.sortOrder",
-		"not a permitted value",
-	)
-	v.Check(
-		validator.PermittedValue(p.Filters.Action.SortOrder, SortOrderSafelist...),
-		"filters.action.sortOrder",
-		"not a permitted value",
-	)
-	v.Check(
-		validator.PermittedValue(p.Filters.Session.SortOrder, SortOrderSafelist...),
-		"filters.session.sortOrder",
 		"not a permitted value",
 	)
 	// Status

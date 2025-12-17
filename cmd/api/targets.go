@@ -223,6 +223,7 @@ func (app *application) listTargetsHandler(w http.ResponseWriter, r *http.Reques
 	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
 
+	// app.logger.Info(fmt.Sprintf("Listing targets with filters: %+v", input.Filters))
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
