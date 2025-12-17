@@ -230,7 +230,7 @@ func (app *application) listActionsHandler(w http.ResponseWriter, r *http.Reques
 	input.Filters.SortSafelist = data.SortSafelist
 	input.Filters.StatusSafelist = data.StatusFilterSafelist
 
-	// app.logger.Info(fmt.Sprintf("Listing actions with filters: %+v", input.Filters))
+	app.logger.Info(fmt.Sprintf("Listing actions with filters: %+v", input.Filters))
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
@@ -286,8 +286,9 @@ func (app *application) listActionSessionsHandler(w http.ResponseWriter, r *http
 	input.Filters.Sort = app.readString(qs, "sort", "-updated_at")
 
 	input.Filters.SortSafelist = data.SessionSortSafelist
-	input.Filters.Status = data.SessionStatusSafelist
+	input.Filters.StatusSafelist = data.SessionStatusSafelist
 
+	app.logger.Info(fmt.Sprintf("Listing action sessions with filters: %+v", input.Filters))
 	if data.ValidateFilters(v, input.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
