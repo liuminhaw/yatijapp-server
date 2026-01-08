@@ -77,6 +77,7 @@ func (m Models) WithTxRetry(
 }
 
 type Models struct {
+	Records         RecordModel
 	Targets         TargetModel
 	Actions         ActionModel
 	Sessions        SessionModel
@@ -91,6 +92,7 @@ type Models struct {
 // NewModels returns a Models struct containing the initialized TargetModel.
 func NewModels(db *sql.DB, jieba *gojieba.Jieba, logger *slog.Logger) Models {
 	return Models{
+		Records:         RecordModel{DB: db, Jieba: jieba, logger: logger},
 		Targets:         TargetModel{DB: db, Jieba: jieba, logger: logger},
 		Actions:         ActionModel{DB: db, Jieba: jieba, logger: logger},
 		Sessions:        SessionModel{DB: db, Jieba: jieba},

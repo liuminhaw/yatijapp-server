@@ -16,6 +16,13 @@ func (app *application) routes() http.Handler {
 	// Healthcheck
 	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
 
+	// Records routes (Targets, Actions, Sessions)
+	router.HandlerFunc(
+		http.MethodGet,
+		"/v1/records",
+		app.requireActivatedUser(app.listRecordsHandler),
+	)
+
 	// Targets routes
 	router.HandlerFunc(
 		http.MethodGet,
